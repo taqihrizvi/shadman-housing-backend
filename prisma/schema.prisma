@@ -1,0 +1,330 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+  MANAGER
+}
+
+enum InventoryStatus {
+  AVAILABLE
+  PENDING
+  RESERVED
+  SOLD
+}
+
+enum ProjectName {
+  SHADMAN_GREENS
+}
+
+enum PlotSize {
+  FIVE_MARLA
+  SEVEN_MARLA
+  TEN_MARLA
+  ONE_KANAL
+  TWO_KANAL
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  ONLINE
+}
+
+enum InstallmentType {
+  MONTHLY_ONLY
+  MONTHLY_AND_QUARTERLY
+}
+
+enum AgreementStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TransferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum VoucherType {
+  RECEIPT
+  PAYMENT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(AGENT)
+  isActive  Boolean  @default(true)
+  signature String?  // Path to signature image
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  customers          Customer[]
+  inventory          Inventory[]        @relation("CreatedInventory")
+  assignedPlots      Inventory[]        @relation("AgentInventory")
+  biyanaForms        Biyana[]           @relation("CreatedBiyana")
+  approvedBiyanas    Biyana[]           @relation("ApprovedBiyana")
+  saleAgreements     SaleAgreement[]    @relation("CreatedAgreements")
+  approvedAgreements SaleAgreement[]    @relation("ApprovedAgreements")
+  transfersCreated   TransferForm[]     @relation("CreatedTransfers")
+  transfersApproved  TransferForm[]     @relation("ApprovedTransfers")
+  vouchersCreated    Voucher[]          @relation("CreatedVouchers")
+  vouchersApproved   Voucher[]          @relation("ApprovedVouchers")
+  notifications      Notification[]
+
+  @@index([email])
+}
+
+model Customer {
+  id               String   @id @default(uuid())
+  name             String
+  fatherName       String
+  cnic             String   @unique
+  phone            String
+  address          String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String
+
+  // Relations
+  createdBy        User           @relation(fields: [createdById], references: [id])
+  plots            Inventory[]
+  biyanaForms      Biyana[]
+  saleAgreements   SaleAgreement[]
+  transfersFrom    TransferForm[] @relation("TransferFrom")
+  transfersTo      TransferForm[] @relation("TransferTo")
+  vouchers         Voucher[]
+
+  @@index([cnic])
+  @@index([name])
+}
+
+model Inventory {
+  id          String          @id @default(uuid())
+  plotNo      String          @unique
+  project     ProjectName
+  size        PlotSize
+  price       Float
+  status      InventoryStatus @default(AVAILABLE)
+  description String?
+  soldDate    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  buyerId     String?
+  agentId     String?
+  createdById String
+
+  // Relations
+  buyer          Customer?       @relation(fields: [buyerId], references: [id])
+  agent          User?           @relation("AgentInventory", fields: [agentId], references: [id])
+  createdBy      User            @relation("CreatedInventory", fields: [createdById], references: [id])
+  biyanaForms    Biyana[]
+  saleAgreements SaleAgreement[]
+  transferForms  TransferForm[]
+  vouchers       Voucher[]
+
+  @@index([status])
+  @@index([project])
+  @@index([plotNo])
+}
+
+model Biyana {
+  id            String         @id @default(uuid())
+  formNumber    String         @unique
+  biyanaAmount  Float
+  paymentMethod PaymentMethod
+  chequeNumber  String?
+  bankName      String?
+  transactionId String?
+  date          DateTime       @default(now())
+  remarks       String?
+  status        ApprovalStatus @default(PENDING)
+  approvedAt    DateTime?
+  approvedById  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  customerId    String
+  plotId        String
+  createdById   String
+  
+  // Installment tracking fields
+  pricePerMarla                Float?
+  totalAmount                  Float?
+  totalRemaining               Float?
+  lastInstallmentDate          String?
+  monthlyInstallments          Int?
+  quarterlyInstallments        Int?
+  agreementDuration            String?
+  monthlyInstallmentAmount     Float?
+  quarterlyInstallmentAmount   Float?
+  installmentType              InstallmentType? @default(MONTHLY_ONLY)
+
+  // Relations
+  customer  Customer @relation(fields: [customerId], references: [id])
+  plot      Inventory @relation(fields: [plotId], references: [id])
+  createdBy User     @relation("CreatedBiyana", fields: [createdById], references: [id])
+  approvedBy User?   @relation("ApprovedBiyana", fields: [approvedById], references: [id])
+
+  @@index([formNumber])
+  @@index([date])
+  @@index([status])
+}
+
+model SaleAgreement {
+  id               String           @id @default(uuid())
+  agreementNumber  String           @unique
+  totalAmount      Float
+  downPayment      Float
+  installmentMonths Int?
+  monthlyAmount    Float?
+  agreementDate    DateTime         @default(now())
+  possessionDate   DateTime?
+  terms            String?
+  status           ApprovalStatus   @default(PENDING)
+  approvedAt       DateTime?
+  approvedById     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  customerId       String
+  plotId           String
+  createdById      String
+
+  // Relations
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  plot       Inventory @relation(fields: [plotId], references: [id])
+  createdBy  User      @relation("CreatedAgreements", fields: [createdById], references: [id])
+  approvedBy User?     @relation("ApprovedAgreements", fields: [approvedById], references: [id])
+  witnesses  Witness[]
+
+  @@index([agreementNumber])
+  @@index([status])
+}
+
+model Witness {
+  id          String   @id @default(uuid())
+  name        String
+  cnic        String
+  createdAt   DateTime @default(now())
+  agreementId String
+
+  // Relations
+  agreement SaleAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+}
+
+model TransferForm {
+  id             String         @id @default(uuid())
+  transferNumber String         @unique
+  transferAmount Float
+  transferDate   DateTime       @default(now())
+  transferFee    Float          @default(0)
+  reason         String?
+  status         TransferStatus @default(PENDING)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  plotId         String
+  fromCustomerId String
+  toCustomerId   String
+  createdById    String
+  approvedById   String?
+
+  // Relations
+  plot         Inventory @relation(fields: [plotId], references: [id])
+  fromCustomer Customer  @relation("TransferFrom", fields: [fromCustomerId], references: [id])
+  toCustomer   Customer  @relation("TransferTo", fields: [toCustomerId], references: [id])
+  createdBy    User      @relation("CreatedTransfers", fields: [createdById], references: [id])
+  approvedBy   User?     @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+
+  @@index([transferNumber])
+  @@index([status])
+}
+
+model Voucher {
+  id            String         @id @default(uuid())
+  voucherNo     String         @unique
+  type          VoucherType    @default(RECEIPT)
+  amount        Float
+  paymentMethod PaymentMethod
+  chequeNumber  String?
+  bankName      String?
+  transactionId String?
+  description   String?
+  date          DateTime       @default(now())
+  formType      String?
+  formId        String?
+  status        ApprovalStatus @default(PENDING)
+  approvedAt    DateTime?
+  approvedById  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  customerId    String
+  plotId        String?
+  createdById   String
+
+  // Relations
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  plot       Inventory? @relation(fields: [plotId], references: [id])
+  createdBy  User       @relation("CreatedVouchers", fields: [createdById], references: [id])
+  approvedBy User?      @relation("ApprovedVouchers", fields: [approvedById], references: [id])
+
+  @@index([voucherNo])
+  @@index([date])
+  @@index([customerId])
+  @@index([status])
+}
+
+enum NotificationType {
+  APPROVAL_PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationRelatedType {
+  BIYANA
+  SALE_AGREEMENT
+  PAYMENT
+  TRANSFER
+}
+
+model Notification {
+  id           String                  @id @default(uuid())
+  type         NotificationType
+  title        String
+  message      String
+  read         Boolean                 @default(false)
+  relatedId    String?
+  relatedType  NotificationRelatedType?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  userId       String
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
