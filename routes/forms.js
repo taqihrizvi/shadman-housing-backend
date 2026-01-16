@@ -65,6 +65,9 @@ router.get('/biyana', protect, async (req, res) => {
 // @access  Private
 router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) => {
   try {
+    // Log incoming data for debugging
+    console.log('Biyana form data received:', JSON.stringify(req.body, null, 2));
+    
     const formNumber = await generateFormNumber('BF');
     
     const biyanaData = {

@@ -224,6 +224,7 @@ router.put('/biyana/:id/reject', protect, authorize('ADMIN'), async (req, res) =
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
@@ -380,6 +381,7 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
@@ -492,6 +494,7 @@ router.put('/sale-agreement/:id/reject', protect, authorize('ADMIN'), async (req
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
@@ -663,6 +666,7 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
@@ -779,6 +783,7 @@ router.put('/transfer/:id/reject', protect, authorize('ADMIN'), async (req, res)
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
@@ -1088,6 +1093,7 @@ router.put('/payments/:id/reject', protect, authorize('ADMIN'), async (req, res)
         approvedBy: {
           select: {
             name: true,
+            signature: true,
           },
         },
       },
