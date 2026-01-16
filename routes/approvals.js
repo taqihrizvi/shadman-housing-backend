@@ -831,48 +831,41 @@ router.put('/transfer/:id/reject', protect, authorize('ADMIN'), async (req, res)
 // @access  Admin only
 router.get('/stats', protect, authorize('ADMIN'), async (req, res) => {
   try {
-    const [biyanasPending, biyanasApproved, biyanasRejected, agreementsPending, agreementsApproved, agreementsRejected, transfersPending, transfersApproved, transfersRejected, vouchersPending, vouchersApproved, vouchersRejected] = await Promise.all([
-      prisma.biyana.count({ where: { status: 'PENDING' } }),
-      prisma.biyana.count({ where: { status: 'APPROVED' } }),
-      prisma.biyana.count({ where: { status: 'REJECTED' } }),
-      prisma.saleAgreement.count({ where: { status: 'PENDING' } }),
-      prisma.saleAgreement.count({ where: { status: 'APPROVED' } }),
-      prisma.saleAgreement.count({ where: { status: 'REJECTED' } }),
-      prisma.transferForm.count({ where: { status: 'PENDING' } }),
-      prisma.transferForm.count({ where: { status: 'APPROVED' } }),
-      prisma.transferForm.count({ where: { status: 'REJECTED' } }),
-      prisma.voucher.count({ where: { status: 'PENDING' } }),
-      prisma.voucher.count({ where: { status: 'APPROVED' } }),
-      prisma.voucher.count({ where: { status: 'REJECTED' } }),
+    // Optimized query using groupBy to reduce database connections
+    const [biyanaCounts, agreementCounts, transferCounts, voucherCounts] = await Promise.all([
+      prisma.biyana.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
+      prisma.saleAgreement.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
+      prisma.transferForm.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
+      prisma.voucher.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
     ]);
+
+    // Helper function to extract counts
+    const getCounts = (data) => {
+      const pending = data.find(d => d.status === 'PENDING')?._count.id || 0;
+      const approved = data.find(d => d.status === 'APPROVED')?._count.id || 0;
+      const rejected = data.find(d => d.status === 'REJECTED')?._count.id || 0;
+      return { pending, approved, rejected, total: pending + approved + rejected };
+    };
 
     res.json({
       success: true,
       data: {
-        forms: {
-          pending: biyanasPending,
-          approved: biyanasApproved,
-          rejected: biyanasRejected,
-          total: biyanasPending + biyanasApproved + biyanasRejected,
-        },
-        agreements: {
-          pending: agreementsPending,
-          approved: agreementsApproved,
-          rejected: agreementsRejected,
-          total: agreementsPending + agreementsApproved + agreementsRejected,
-        },
-        transfers: {
-          pending: transfersPending,
-          approved: transfersApproved,
-          rejected: transfersRejected,
-          total: transfersPending + transfersApproved + transfersRejected,
-        },
-        payments: {
-          pending: vouchersPending,
-          approved: vouchersApproved,
-          rejected: vouchersRejected,
-          total: vouchersPending + vouchersApproved + vouchersRejected,
-        },
+        forms: getCounts(biyanaCounts),
+        agreements: getCounts(agreementCounts),
+        transfers: getCounts(transferCounts),
+        payments: getCounts(voucherCounts),
       },
     });
   } catch (error) {
