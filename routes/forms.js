@@ -126,7 +126,14 @@ router.get('/sale-agreement', protect, async (req, res) => {
     const agreements = await prisma.saleAgreement.findMany({
       include: {
         customer: { select: { name: true, fatherName: true, cnic: true, phone: true, address: true } },
-        plot: { select: { plotNo: true, project: true, size: true } },
+        plot: { 
+          select: { 
+            plotNo: true, 
+            project: true, 
+            size: true,
+            buyer: { select: { id: true, name: true, fatherName: true, cnic: true, phone: true, address: true } }
+          } 
+        },
         createdBy: { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -135,19 +142,20 @@ router.get('/sale-agreement', protect, async (req, res) => {
     // Calculate total paid (downPayment + biyana + vouchers) for each agreement
     const agreementsWithPayments = await Promise.all(
       agreements.map(async (agreement) => {
-        // Get vouchers
+        // Get APPROVED vouchers only for this plot (regardless of customer)
         const vouchers = await prisma.voucher.findMany({
           where: {
             plotId: agreement.plotId,
-            customerId: agreement.customerId,
             type: 'RECEIPT',
+            status: 'APPROVED',
           },
         });
         
-        // Get biyana
+        // Get APPROVED biyana only
         const biyana = await prisma.biyana.findFirst({
           where: {
             plotId: agreement.plotId,
+            status: 'APPROVED',
           },
         });
         
@@ -157,6 +165,8 @@ router.get('/sale-agreement', protect, async (req, res) => {
         
         return {
           ...agreement,
+          currentOwner: agreement.plot?.buyer, // Current owner from inventory
+          originalCustomer: agreement.customer, // Original customer from agreement
           totalPaid,
           vouchersTotal,
           biyanaAmount,
@@ -186,7 +196,11 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
       where: { id: req.params.id },
       include: {
         customer: true,
-        plot: true,
+        plot: {
+          include: {
+            buyer: true, // Current owner
+          },
+        },
         createdBy: { select: { name: true, signature: true } },
         witnesses: true,
       },
@@ -199,19 +213,20 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
       });
     }
 
-    // Get vouchers and biyana for payment calculations
+    // Get vouchers and biyana for payment calculations (APPROVED only)
+    // Filter by plot only - payments are tied to the plot, not the customer
     const vouchers = await prisma.voucher.findMany({
       where: {
         plotId: agreement.plotId,
-        customerId: agreement.customerId,
         type: 'RECEIPT',
+        status: 'APPROVED',
       },
     });
     
     const biyana = await prisma.biyana.findFirst({
       where: {
         plotId: agreement.plotId,
-        customerId: agreement.customerId,
+        status: 'APPROVED',
       },
       select: {
         biyanaAmount: true,
@@ -234,6 +249,8 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
       success: true,
       data: {
         ...agreement,
+        currentOwner: agreement.plot?.buyer, // Current owner from inventory
+        originalCustomer: agreement.customer, // Original customer from agreement
         totalPaid,
         vouchersTotal,
         biyanaAmount,

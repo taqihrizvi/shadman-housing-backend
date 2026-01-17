@@ -70,6 +70,7 @@ router.get('/dashboard', protect, async (req, res) => {
       : 0;
 
     // Pending payments (from sale agreements - calculate actual pending amount)
+    // Get active agreements with current plot owners
     const activeAgreements = await prisma.saleAgreement.findMany({
       where: { status: 'APPROVED' },
       select: {
@@ -77,36 +78,61 @@ router.get('/dashboard', protect, async (req, res) => {
         plotId: true,
         totalAmount: true,
         downPayment: true,
+        plot: {
+          select: {
+            buyerId: true,
+          },
+        },
       },
     });
 
     // Calculate total pending by subtracting all payments made for each plot
     let pendingPaymentsTotal = 0;
     let pendingCustomersCount = 0;
+    const processedCustomers = new Set();
 
     for (const agreement of activeAgreements) {
-      // Get all approved payments (vouchers) for this plot
-      const payments = await prisma.voucher.findMany({
+      // Get APPROVED vouchers only for this plot
+      const vouchers = await prisma.voucher.findMany({
         where: {
           plotId: agreement.plotId,
-          status: 'APPROVED',
           type: 'RECEIPT',
+          status: 'APPROVED',
         },
         select: {
           amount: true,
         },
       });
 
-      // Calculate total paid (including down payment from agreement and all installments)
-      const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+      // Get APPROVED biyana payment for this plot
+      const biyana = await prisma.biyana.findFirst({
+        where: {
+          plotId: agreement.plotId,
+          status: 'APPROVED',
+        },
+        select: {
+          biyanaAmount: true,
+        },
+      });
+
+      // Calculate total paid: Down Payment + Approved Biyana + Approved Vouchers
+      const totalVoucherAmount = vouchers.reduce((sum, payment) => sum + payment.amount, 0);
+      const biyanaAmount = biyana?.biyanaAmount || 0;
+      const downPayment = agreement.downPayment || 0;
+      const totalPaid = downPayment + biyanaAmount + totalVoucherAmount;
       
-      // Calculate pending for this agreement
-      const pending = agreement.totalAmount - totalPaid;
+      // Calculate pending amount = Total Amount - Total Paid (Approved Only)
+      const pendingAmount = agreement.totalAmount - totalPaid;
       
-      // Only count if there's still an outstanding balance
-      if (pending > 0) {
-        pendingPaymentsTotal += pending;
-        pendingCustomersCount += 1;
+      // Only count if there's still a pending amount
+      if (pendingAmount > 0) {
+        pendingPaymentsTotal += pendingAmount;
+        // Count unique customers based on current plot owner
+        const currentOwnerId = agreement.plot?.buyerId;
+        if (currentOwnerId && !processedCustomers.has(currentOwnerId)) {
+          processedCustomers.add(currentOwnerId);
+          pendingCustomersCount += 1;
+        }
       }
     }
 

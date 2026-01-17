@@ -680,6 +680,29 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
       },
     });
 
+    // Update all pending and future vouchers for this plot to the new customer
+    await prisma.voucher.updateMany({
+      where: {
+        plotId: transfer.plotId,
+        customerId: transfer.fromCustomerId,
+      },
+      data: {
+        customerId: transfer.toCustomerId,
+      },
+    });
+
+    // Update sale agreement customer if exists
+    await prisma.saleAgreement.updateMany({
+      where: {
+        plotId: transfer.plotId,
+        customerId: transfer.fromCustomerId,
+        status: 'APPROVED',
+      },
+      data: {
+        customerId: transfer.toCustomerId,
+      },
+    });
+
     // Create notification for the form creator
     await createNotification(
       transfer.createdById,

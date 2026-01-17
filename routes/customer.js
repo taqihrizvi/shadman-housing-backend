@@ -146,6 +146,134 @@ router.put('/:id', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/customers/:id/pending-payments
+// @desc    Get customer's pending payments (based on current plot ownership)
+// @access  Private
+router.get('/:id/pending-payments', protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get current customer info
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { id: true, name: true, fatherName: true, cnic: true, phone: true },
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found',
+      });
+    }
+
+    // Get all plots currently owned by this customer
+    const customerPlots = await prisma.inventory.findMany({
+      where: { buyerId: id },
+      select: { id: true, plotNo: true, project: true, size: true },
+    });
+
+    if (!customerPlots || customerPlots.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        total: 0,
+      });
+    }
+
+    const plotIds = customerPlots.map(plot => plot.id);
+
+    // Get approved sale agreements for these plots
+    const agreements = await prisma.saleAgreement.findMany({
+      where: {
+        plotId: { in: plotIds },
+        status: 'APPROVED',
+      },
+      select: {
+        id: true,
+        plotId: true,
+        totalAmount: true,
+        downPayment: true,
+        agreementDate: true,
+      },
+    });
+
+    // Calculate pending payments for each plot
+    const pendingPayments = await Promise.all(
+      agreements.map(async (agreement) => {
+        // Get APPROVED vouchers only for this plot
+        const vouchers = await prisma.voucher.findMany({
+          where: {
+            plotId: agreement.plotId,
+            type: 'RECEIPT',
+            status: 'APPROVED',
+          },
+          select: { amount: true, date: true },
+        });
+
+        // Get APPROVED biyana payment for this plot
+        const biyana = await prisma.biyana.findFirst({
+          where: {
+            plotId: agreement.plotId,
+            status: 'APPROVED',
+          },
+          select: {
+            biyanaAmount: true,
+          },
+        });
+
+        // Calculate total paid: Down Payment + Approved Biyana + Approved Vouchers
+        const totalVoucherAmount = vouchers.reduce((sum, v) => sum + v.amount, 0);
+        const biyanaAmount = biyana?.biyanaAmount || 0;
+        const downPayment = agreement.downPayment || 0;
+        const totalPaid = downPayment + biyanaAmount + totalVoucherAmount;
+        const pendingAmount = agreement.totalAmount - totalPaid;
+        
+        const plot = customerPlots.find(p => p.id === agreement.plotId);
+
+        return {
+          customer: {
+            id: customer.id,
+            name: customer.name,
+            fatherName: customer.fatherName,
+            cnic: customer.cnic,
+            phone: customer.phone,
+          },
+          plotId: agreement.plotId,
+          plotNo: plot?.plotNo,
+          project: plot?.project,
+          size: plot?.size,
+          totalAmount: agreement.totalAmount,
+          downPayment,
+          biyanaAmount,
+          totalVoucherAmount,
+          totalPaid,
+          pendingAmount,
+          agreementDate: agreement.agreementDate,
+          lastPaymentDate: vouchers.length > 0 
+            ? vouchers.sort((a, b) => b.date - a.date)[0].date 
+            : null,
+        };
+      })
+    );
+
+    // Filter out plots with no pending amount
+    const activePending = pendingPayments.filter(p => p.pendingAmount > 0);
+    const totalPending = activePending.reduce((sum, p) => sum + p.pendingAmount, 0);
+
+    res.json({
+      success: true,
+      data: activePending,
+      total: totalPending,
+      customerInfo: customer,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
 // @route   DELETE /api/customers/:id
 // @desc    Delete customer
 // @access  Private
