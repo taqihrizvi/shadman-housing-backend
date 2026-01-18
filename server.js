@@ -17,6 +17,7 @@ import voucherRoutes from './routes/voucher.js';
 import reportRoutes from './routes/report.js';
 import approvalRoutes from './routes/approvals.js';
 import notificationRoutes from './routes/notifications.js';
+import transferRoutes from './routes/transfer.js';
 
 // Load environment variables
 dotenv.config();
@@ -107,6 +108,7 @@ app.use('/api/vouchers', voucherRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/transfer', transferRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

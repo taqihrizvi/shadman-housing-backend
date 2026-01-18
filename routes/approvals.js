@@ -332,6 +332,9 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
 
     const agreement = await prisma.saleAgreement.findUnique({
       where: { id },
+      include: {
+        plot: true
+      }
     });
 
     if (!agreement) {
@@ -348,84 +351,148 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
       });
     }
 
-    // Update Sale Agreement status to APPROVED
-    const updatedAgreement = await prisma.saleAgreement.update({
-      where: { id },
-      data: {
-        status: 'APPROVED',
-        approvedById: req.user.id,
-        approvedAt: new Date(),
-      },
-      include: {
-        customer: {
-          select: {
-            name: true,
-            fatherName: true,
-            cnic: true,
-            phone: true,
-          },
-        },
-        plot: {
-          select: {
-            plotNo: true,
-            project: true,
-            size: true,
-
-          },
-        },
-        createdBy: {
-          select: {
-            name: true,
-          },
-        },
-        approvedBy: {
-          select: {
-            name: true,
-            signature: true,
-          },
-        },
-      },
-    });
-
-    // Update inventory status to SOLD when approved
-    await prisma.inventory.update({
-      where: { id: agreement.plotId },
-      data: {
-        status: 'SOLD',
-        soldDate: new Date(),
-      },
-    });
-
-    // Customer updated (totalInvestment field removed from schema)
-
-    // Create notification for the form creator
-    await createNotification(
-      agreement.createdById,
-      'APPROVED',
-      'Sale Agreement Approved',
-      `Your Sale Agreement ${agreement.formNumber} has been approved`,
-      agreement.id,
-      'SALE_AGREEMENT'
-    );
-
-    // Mark the admin's pending approval notification as read
-    await prisma.notification.updateMany({
+    // Check if this is for a transferred plot
+    const relatedTransfer = await prisma.transferForm.findFirst({
       where: {
-        userId: req.user.id,
-        relatedId: agreement.id,
-        relatedType: 'SALE_AGREEMENT',
-        type: 'APPROVAL_PENDING',
-        read: false,
-      },
-      data: {
-        read: true,
-      },
+        plotId: agreement.plotId,
+        toCustomerId: agreement.customerId,
+        status: { in: ['APPROVED', 'COMPLETED'] } // Check both statuses
+      }
+    });
+
+    // Process in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update Sale Agreement status to APPROVED
+      const updatedAgreement = await tx.saleAgreement.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          approvedById: req.user.id,
+          approvedAt: new Date(),
+        },
+        include: {
+          customer: {
+            select: {
+              name: true,
+              fatherName: true,
+              cnic: true,
+              phone: true,
+            },
+          },
+          plot: {
+            select: {
+              plotNo: true,
+              project: true,
+              size: true,
+            },
+          },
+          createdBy: {
+            select: {
+              name: true,
+            },
+          },
+          approvedBy: {
+            select: {
+              name: true,
+              signature: true,
+            },
+          },
+        },
+      });
+
+      // If there's a related transfer, complete it and change plot status back to SOLD
+      if (relatedTransfer) {
+        // Archive the old sale agreement (the one that was locked during transfer)
+        const oldAgreement = await tx.saleAgreement.findFirst({
+          where: {
+            plotId: agreement.plotId,
+            isLocked: true,
+            transferId: relatedTransfer.id
+          }
+        });
+
+        if (oldAgreement) {
+          await tx.saleAgreement.update({
+            where: { id: oldAgreement.id },
+            data: {
+              isArchived: true,
+              isActive: false
+            }
+          });
+        }
+
+        // Complete the transfer
+        await tx.transferForm.update({
+          where: { id: relatedTransfer.id },
+          data: {
+            status: 'COMPLETED',
+            completedAt: new Date(),
+            newSaleAgreementId: agreement.id
+          }
+        });
+
+        // Update inventory status to SOLD (from TRANSFERRED)
+        await tx.inventory.update({
+          where: { id: agreement.plotId },
+          data: {
+            status: 'SOLD',
+            soldDate: new Date(),
+          },
+        });
+
+        // Create notification for transfer creator
+        await createNotification(
+          relatedTransfer.createdById,
+          'APPROVED',
+          'Transfer Completed',
+          `Plot transfer ${relatedTransfer.transferNumber} has been completed. Plot ${agreement.plot.plotNo} is now SOLD to the new owner.`,
+          relatedTransfer.id,
+          'TRANSFER'
+        );
+      } else {
+        // Normal sale agreement - Update inventory status to SOLD
+        await tx.inventory.update({
+          where: { id: agreement.plotId },
+          data: {
+            status: 'SOLD',
+            soldDate: new Date(),
+          },
+        });
+      }
+
+      // Create notification for the form creator
+      await createNotification(
+        agreement.createdById,
+        'APPROVED',
+        'Sale Agreement Approved',
+        `Your Sale Agreement ${agreement.agreementNumber} has been approved`,
+        agreement.id,
+        'SALE_AGREEMENT'
+      );
+
+      // Mark the admin's pending approval notification as read
+      await tx.notification.updateMany({
+        where: {
+          userId: req.user.id,
+          relatedId: agreement.id,
+          relatedType: 'SALE_AGREEMENT',
+          type: 'APPROVAL_PENDING',
+          read: false,
+        },
+        data: {
+          read: true,
+        },
+      });
+
+      return updatedAgreement;
     });
 
     res.json({
       success: true,
-      data: updatedAgreement,
-      message: 'Sale Agreement approved',
+      data: result,
+      message: relatedTransfer 
+        ? 'Sale Agreement approved and transfer completed. Plot status changed to SOLD.'
+        : 'Sale Agreement approved',
     });
   } catch (error) {
     res.status(500).json({

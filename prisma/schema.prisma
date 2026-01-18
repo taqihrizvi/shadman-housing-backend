@@ -21,6 +21,7 @@ enum InventoryStatus {
   PENDING
   RESERVED
   SOLD
+  TRANSFERRED
 }
 
 enum ProjectName {
@@ -78,46 +79,46 @@ model User {
   password  String
   role      UserRole @default(AGENT)
   isActive  Boolean  @default(true)
-  signature String?  // Path to signature image
+  signature String? // Path to signature image
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
   customers          Customer[]
-  inventory          Inventory[]        @relation("CreatedInventory")
-  assignedPlots      Inventory[]        @relation("AgentInventory")
-  biyanaForms        Biyana[]           @relation("CreatedBiyana")
-  approvedBiyanas    Biyana[]           @relation("ApprovedBiyana")
-  saleAgreements     SaleAgreement[]    @relation("CreatedAgreements")
-  approvedAgreements SaleAgreement[]    @relation("ApprovedAgreements")
-  transfersCreated   TransferForm[]     @relation("CreatedTransfers")
-  transfersApproved  TransferForm[]     @relation("ApprovedTransfers")
-  vouchersCreated    Voucher[]          @relation("CreatedVouchers")
-  vouchersApproved   Voucher[]          @relation("ApprovedVouchers")
+  inventory          Inventory[]     @relation("CreatedInventory")
+  assignedPlots      Inventory[]     @relation("AgentInventory")
+  biyanaForms        Biyana[]        @relation("CreatedBiyana")
+  approvedBiyanas    Biyana[]        @relation("ApprovedBiyana")
+  saleAgreements     SaleAgreement[] @relation("CreatedAgreements")
+  approvedAgreements SaleAgreement[] @relation("ApprovedAgreements")
+  transfersCreated   TransferForm[]  @relation("CreatedTransfers")
+  transfersApproved  TransferForm[]  @relation("ApprovedTransfers")
+  vouchersCreated    Voucher[]       @relation("CreatedVouchers")
+  vouchersApproved   Voucher[]       @relation("ApprovedVouchers")
   notifications      Notification[]
 
   @@index([email])
 }
 
 model Customer {
-  id               String   @id @default(uuid())
-  name             String
-  fatherName       String
-  cnic             String   @unique
-  phone            String
-  address          String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  createdById      String
+  id          String   @id @default(uuid())
+  name        String
+  fatherName  String
+  cnic        String   @unique
+  phone       String
+  address     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
 
   // Relations
-  createdBy        User           @relation(fields: [createdById], references: [id])
-  plots            Inventory[]
-  biyanaForms      Biyana[]
-  saleAgreements   SaleAgreement[]
-  transfersFrom    TransferForm[] @relation("TransferFrom")
-  transfersTo      TransferForm[] @relation("TransferTo")
-  vouchers         Voucher[]
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  plots          Inventory[]
+  biyanaForms    Biyana[]
+  saleAgreements SaleAgreement[]
+  transfersFrom  TransferForm[]  @relation("TransferFrom")
+  transfersTo    TransferForm[]  @relation("TransferTo")
+  vouchers       Voucher[]
 
   @@index([cnic])
   @@index([name])
@@ -170,24 +171,24 @@ model Biyana {
   customerId    String
   plotId        String
   createdById   String
-  
+
   // Installment tracking fields
-  pricePerMarla                Float?
-  totalAmount                  Float?
-  totalRemaining               Float?
-  lastInstallmentDate          String?
-  monthlyInstallments          Int?
-  quarterlyInstallments        Int?
-  agreementDuration            String?
-  monthlyInstallmentAmount     Float?
-  quarterlyInstallmentAmount   Float?
-  installmentType              InstallmentType? @default(MONTHLY_ONLY)
+  pricePerMarla              Float?
+  totalAmount                Float?
+  totalRemaining             Float?
+  lastInstallmentDate        String?
+  monthlyInstallments        Int?
+  quarterlyInstallments      Int?
+  agreementDuration          String?
+  monthlyInstallmentAmount   Float?
+  quarterlyInstallmentAmount Float?
+  installmentType            InstallmentType? @default(MONTHLY_ONLY)
 
   // Relations
-  customer  Customer @relation(fields: [customerId], references: [id])
-  plot      Inventory @relation(fields: [plotId], references: [id])
-  createdBy User     @relation("CreatedBiyana", fields: [createdById], references: [id])
-  approvedBy User?   @relation("ApprovedBiyana", fields: [approvedById], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  plot       Inventory @relation(fields: [plotId], references: [id])
+  createdBy  User      @relation("CreatedBiyana", fields: [createdById], references: [id])
+  approvedBy User?     @relation("ApprovedBiyana", fields: [approvedById], references: [id])
 
   @@index([formNumber])
   @@index([date])
@@ -195,23 +196,28 @@ model Biyana {
 }
 
 model SaleAgreement {
-  id               String           @id @default(uuid())
-  agreementNumber  String           @unique
-  totalAmount      Float
-  downPayment      Float
+  id                String         @id @default(uuid())
+  agreementNumber   String         @unique
+  totalAmount       Float
+  downPayment       Float
   installmentMonths Int?
-  monthlyAmount    Float?
-  agreementDate    DateTime         @default(now())
-  possessionDate   DateTime?
-  terms            String?
-  status           ApprovalStatus   @default(PENDING)
-  approvedAt       DateTime?
-  approvedById     String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  customerId       String
-  plotId           String
-  createdById      String
+  monthlyAmount     Float?
+  agreementDate     DateTime       @default(now())
+  possessionDate    DateTime?
+  terms             String?
+  status            ApprovalStatus @default(PENDING)
+  isLocked          Boolean        @default(false) // Locked when plot is transferred
+  isActive          Boolean        @default(true) // Inactive when superseded by new agreement
+  isArchived        Boolean        @default(false) // Archived when plot transferred and new agreement created
+  transferId        String? // Reference to transfer that locked this agreement
+  remarks           String?
+  approvedAt        DateTime?
+  approvedById      String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  customerId        String
+  plotId            String
+  createdById       String
 
   // Relations
   customer   Customer  @relation(fields: [customerId], references: [id])
@@ -222,6 +228,8 @@ model SaleAgreement {
 
   @@index([agreementNumber])
   @@index([status])
+  @@index([isActive])
+  @@index([isArchived])
 }
 
 model Witness {
@@ -236,20 +244,24 @@ model Witness {
 }
 
 model TransferForm {
-  id             String         @id @default(uuid())
-  transferNumber String         @unique
-  transferAmount Float
-  transferDate   DateTime       @default(now())
-  transferFee    Float          @default(0)
-  reason         String?
-  status         TransferStatus @default(PENDING)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  plotId         String
-  fromCustomerId String
-  toCustomerId   String
-  createdById    String
-  approvedById   String?
+  id                      String         @id @default(uuid())
+  transferNumber          String         @unique
+  transferAmount          Float // Amount paid by new owner to previous owner
+  transferDate            DateTime       @default(now())
+  transferFee             Float          @default(0) // Admin/processing fee
+  reason                  String?
+  status                  TransferStatus @default(PENDING)
+  approvedAt              DateTime?
+  completedAt             DateTime? // When new agreement is approved and transfer is complete
+  previousSaleAgreementId String? // Reference to old agreement that gets locked
+  newSaleAgreementId      String? // Reference to new agreement created after transfer
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  plotId                  String
+  fromCustomerId          String
+  toCustomerId            String
+  createdById             String
+  approvedById            String?
 
   // Relations
   plot         Inventory @relation(fields: [plotId], references: [id])
@@ -260,6 +272,7 @@ model TransferForm {
 
   @@index([transferNumber])
   @@index([status])
+  @@index([plotId])
 }
 
 model Voucher {
@@ -310,16 +323,16 @@ enum NotificationRelatedType {
 }
 
 model Notification {
-  id           String                  @id @default(uuid())
-  type         NotificationType
-  title        String
-  message      String
-  read         Boolean                 @default(false)
-  relatedId    String?
-  relatedType  NotificationRelatedType?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
-  userId       String
+  id          String                   @id @default(uuid())
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean                  @default(false)
+  relatedId   String?
+  relatedType NotificationRelatedType?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  userId      String
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
