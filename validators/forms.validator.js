@@ -339,10 +339,9 @@ export const paymentSchema = Joi.object({
     }),
   
   formType: Joi.string()
-    .valid('INSTALLMENT', 'FULL_PAYMENT')
     .optional()
     .messages({
-      'any.only': 'Form type must be INSTALLMENT or FULL_PAYMENT',
+      'string.base': 'Form type must be a valid string',
     }),
   
   notes: Joi.string()

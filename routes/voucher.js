@@ -125,6 +125,24 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
 
     // Auto-fetch amounts for BIYANA and SALES_AGREEMENT types
     if (formType === 'BIYANA' && plotId) {
+      // Check if a Biyana voucher already exists for this plot
+      const existingBiyanaVoucher = await prisma.voucher.findFirst({
+        where: {
+          plotId: plotId,
+          formType: 'BIYANA',
+          status: {
+            in: ['PENDING', 'APPROVED']
+          }
+        }
+      });
+
+      if (existingBiyanaVoucher) {
+        return res.status(400).json({
+          success: false,
+          message: 'Biyana voucher for this plot already exists'
+        });
+      }
+
       // Fetch latest approved Biyana form for this plot
       const biyanaForm = await prisma.biyana.findFirst({
         where: {
@@ -147,11 +165,29 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       finalCustomerId = biyanaForm.customerId;
       description = description || `Biyana Payment - ${biyanaForm.formNumber}`;
     } else if (formType === 'SALES_AGREEMENT' && plotId) {
+      // Check if a Sales Agreement voucher already exists for this plot
+      const existingSalesVoucher = await prisma.voucher.findFirst({
+        where: {
+          plotId: plotId,
+          formType: 'SALES_AGREEMENT',
+          status: {
+            in: ['PENDING', 'APPROVED']
+          }
+        }
+      });
+
+      if (existingSalesVoucher) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sales Agreement voucher for this plot already exists'
+        });
+      }
+
       // Fetch latest active Sale Agreement for this plot
       const saleAgreement = await prisma.saleAgreement.findFirst({
         where: {
           plotId: plotId,
-          status: 'ACTIVE',
+          status: 'APPROVED',
           isActive: true
         },
         orderBy: {

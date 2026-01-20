@@ -115,14 +115,10 @@ const seedData = async () => {
       ONE_KANAL: 8500000,
     };
 
-    const blocks = ['Block A', 'Block B', 'Block C', 'Block D'];
-
     for (let i = 0; i < 50; i++) {
       const project = projects[Math.floor(Math.random() * projects.length)];
-      const block = blocks[i % blocks.length];
       const size = sizes[Math.floor(Math.random() * sizes.length)];
-      const blockLetter = block.split(' ')[1];
-      const plotNumber = `${blockLetter}-${String(i + 101).padStart(3, '0')}`;
+      const plotNumber = `${String(i + 101).padStart(3, '0')}`;
       
       let status = 'AVAILABLE';
       let buyerId = null;
@@ -141,14 +137,13 @@ const seedData = async () => {
         data: {
           plotNo: plotNumber,
           project,
-          block,
           size,
           price: basePrices[size] + Math.floor(Math.random() * 500000),
           status,
           buyerId,
           agentId,
           soldDate,
-          description: `Beautiful ${size.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())} plot in ${project.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}, ${block}`,
+          description: `Beautiful ${size.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())} plot in ${project.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}`,
           createdById: admin.id,
         },
       });
