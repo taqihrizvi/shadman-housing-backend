@@ -48,6 +48,13 @@ enum InstallmentType {
   MONTHLY_AND_QUARTERLY
 }
 
+enum PaymentFormType {
+  INSTALLMENT
+  QUARTERLY
+  BIYANA
+  SALES_AGREEMENT
+}
+
 enum AgreementStatus {
   ACTIVE
   COMPLETED
@@ -246,6 +253,7 @@ model Witness {
 model TransferForm {
   id                      String         @id @default(uuid())
   transferNumber          String         @unique
+  transferType            String         @default("GENERAL") // GENERAL or DEATH
   transferAmount          Float // Amount paid by new owner to previous owner
   transferDate            DateTime       @default(now())
   transferFee             Float          @default(0) // Admin/processing fee
@@ -276,23 +284,23 @@ model TransferForm {
 }
 
 model Voucher {
-  id            String         @id @default(uuid())
-  voucherNo     String         @unique
-  type          VoucherType    @default(RECEIPT)
+  id            String           @id @default(uuid())
+  voucherNo     String           @unique
+  type          VoucherType      @default(RECEIPT)
   amount        Float
   paymentMethod PaymentMethod
   chequeNumber  String?
   bankName      String?
   transactionId String?
   description   String?
-  date          DateTime       @default(now())
-  formType      String?
+  date          DateTime         @default(now())
+  formType      PaymentFormType?
   formId        String?
-  status        ApprovalStatus @default(PENDING)
+  status        ApprovalStatus   @default(PENDING)
   approvedAt    DateTime?
   approvedById  String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
   customerId    String
   plotId        String?
   createdById   String

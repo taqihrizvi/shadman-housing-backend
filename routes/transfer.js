@@ -23,6 +23,7 @@ router.post('/', protect, async (req, res) => {
       toCustomerId,
       transferAmount,
       transferFee = 0,
+      transferType = 'GENERAL',
       reason
     } = req.body;
 
@@ -116,6 +117,7 @@ router.post('/', protect, async (req, res) => {
           toCustomerId,
           transferAmount,
           transferFee,
+          transferType,
           reason,
           status: 'PENDING',
           previousSaleAgreementId: activeSaleAgreement?.id,
@@ -231,7 +233,7 @@ router.put('/:id/approve', protect, async (req, res) => {
           fromCustomer: true,
           toCustomer: true,
           approvedBy: {
-            select: { name: true, email: true }
+            select: { name: true, email: true, signature: true }
           }
         }
       });
@@ -526,7 +528,7 @@ router.get('/', protect, async (req, res) => {
           select: { name: true, email: true }
         },
         approvedBy: {
-          select: { name: true, email: true }
+          select: { name: true, email: true, signature: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -569,7 +571,7 @@ router.get('/:id', protect, async (req, res) => {
           select: { name: true, email: true }
         },
         approvedBy: {
-          select: { name: true, email: true }
+          select: { name: true, email: true, signature: true }
         }
       }
     });

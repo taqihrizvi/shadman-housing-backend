@@ -117,10 +117,68 @@ router.get('/:id', protect, async (req, res) => {
 router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
   try {
     const voucherNo = await generateVoucherNumber();
+    const { formType, plotId, customerId, amount, ...restData } = req.body;
+    
+    let finalAmount = amount;
+    let finalCustomerId = customerId;
+    let description = restData.description || '';
+
+    // Auto-fetch amounts for BIYANA and SALES_AGREEMENT types
+    if (formType === 'BIYANA' && plotId) {
+      // Fetch latest approved Biyana form for this plot
+      const biyanaForm = await prisma.biyana.findFirst({
+        where: {
+          plotId: plotId,
+          status: 'APPROVED'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      if (!biyanaForm) {
+        return res.status(400).json({
+          success: false,
+          message: 'No approved Biyana form found for this plot'
+        });
+      }
+
+      finalAmount = biyanaForm.biyanaAmount;
+      finalCustomerId = biyanaForm.customerId;
+      description = description || `Biyana Payment - ${biyanaForm.formNumber}`;
+    } else if (formType === 'SALES_AGREEMENT' && plotId) {
+      // Fetch latest active Sale Agreement for this plot
+      const saleAgreement = await prisma.saleAgreement.findFirst({
+        where: {
+          plotId: plotId,
+          status: 'ACTIVE',
+          isActive: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      if (!saleAgreement) {
+        return res.status(400).json({
+          success: false,
+          message: 'No active Sales Agreement found for this plot'
+        });
+      }
+
+      finalAmount = saleAgreement.downPayment;
+      finalCustomerId = saleAgreement.customerId;
+      description = description || `Sales Agreement Down Payment - ${saleAgreement.agreementNumber}`;
+    }
     
     const voucherData = {
-      ...req.body,
+      ...restData,
       voucherNo,
+      amount: finalAmount,
+      customerId: finalCustomerId,
+      plotId,
+      formType,
+      description,
       status: 'PENDING', // Set status as PENDING for admin approval
       createdById: req.user.id,
     };
@@ -152,6 +210,7 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       message: 'Voucher submitted for approval',
     });
   } catch (error) {
+    console.error('Voucher creation error:', error);
     res.status(500).json({
       success: false,
       message: error.message,
