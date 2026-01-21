@@ -35,6 +35,14 @@ router.post('/', protect, async (req, res) => {
       });
     }
 
+    // Validate that transferor and transferee are not the same person
+    if (fromCustomerId === toCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Transferor and Transferee cannot be the same person'
+      });
+    }
+
     // Check if plot exists and is SOLD
     const plot = await prisma.inventory.findUnique({
       where: { id: plotId },
@@ -61,7 +69,7 @@ router.post('/', protect, async (req, res) => {
     if (plot.status !== 'SOLD') {
       return res.status(400).json({
         success: false,
-        message: 'Only SOLD plots can be transferred'
+        message: 'Only SOLD plots can be transferred. Plot must have an approved sale agreement.'
       });
     }
 
@@ -69,6 +77,15 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Plot does not belong to the specified current owner'
+      });
+    }
+
+    // Ensure there's an active sale agreement for the current owner
+    const activeSaleAgreement = plot.saleAgreements[0];
+    if (!activeSaleAgreement || activeSaleAgreement.status !== 'APPROVED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Plot must have an approved sale agreement before it can be transferred. Please create and approve a sale agreement first.'
       });
     }
 
@@ -84,6 +101,49 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'There is already a pending transfer for this plot'
+      });
+    }
+
+    // Calculate total amount paid against the plot (regardless of who paid)
+    // This includes: biyana + down payment + all payment vouchers
+    
+    // 1. Get biyana amount for this plot
+    const biyanaForm = await prisma.biyana.findFirst({
+      where: {
+        plotId,
+        status: 'APPROVED'
+      }
+    });
+    const biyanaAmount = biyanaForm?.biyanaAmount || 0;
+
+    // 2. Get down payment from sale agreement
+    const downPayment = activeSaleAgreement?.downPayment || 0;
+
+    // 3. Get all payment vouchers for this plot
+    const payments = await prisma.voucher.findMany({
+      where: {
+        plotId,
+        type: 'PAYMENT',
+        status: 'APPROVED'
+      }
+    });
+    const paymentsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    const totalPaid = biyanaAmount + downPayment + paymentsTotal;
+
+    console.log('Total Paid Calculation:', {
+      biyana: biyanaAmount,
+      downPayment: downPayment,
+      payments: paymentsTotal,
+      total: totalPaid,
+      transferAmount: transferAmount
+    });
+
+    // Validate transfer amount matches total paid for the plot
+    if (transferAmount !== totalPaid) {
+      return res.status(400).json({
+        success: false,
+        message: `Transfer amount (Rs ${transferAmount.toLocaleString()}) must equal the total amount paid for this plot (Rs ${totalPaid.toLocaleString()}). Breakdown: Biyana Rs ${biyanaAmount.toLocaleString()} + Down Payment Rs ${downPayment.toLocaleString()} + Payments Rs ${paymentsTotal.toLocaleString()} = Rs ${totalPaid.toLocaleString()}`
       });
     }
 
@@ -103,9 +163,6 @@ router.post('/', protect, async (req, res) => {
     const count = await prisma.transferForm.count();
     const transferNumber = `TRF-${String(count + 1).padStart(6, '0')}`;
 
-    // Get the active sale agreement to lock later
-    const activeSaleAgreement = plot.saleAgreements[0];
-
     // Create transfer form in a transaction
     const transfer = await prisma.$transaction(async (tx) => {
       // Create transfer record
@@ -120,7 +177,7 @@ router.post('/', protect, async (req, res) => {
           transferType,
           reason,
           status: 'PENDING',
-          previousSaleAgreementId: activeSaleAgreement?.id,
+          previousSaleAgreementId: activeSaleAgreement.id, // Guaranteed to exist due to validation above
           createdById: req.user.id
         },
         include: {

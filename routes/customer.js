@@ -91,8 +91,42 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/', protect, async (req, res) => {
   try {
+    const { cnic, phone, name, fatherName, address } = req.body;
+
+    // Validate CNIC: exactly 13 digits, numbers only
+    if (!cnic || !/^\d{13}$/.test(cnic)) {
+      return res.status(400).json({
+        success: false,
+        message: 'CNIC must be exactly 13 digits and contain only numbers'
+      });
+    }
+
+    // Validate phone: max 11 digits, numbers only
+    if (!phone || !/^\d{1,11}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be at most 11 digits and contain only numbers'
+      });
+    }
+
+    // Check CNIC uniqueness
+    const existingCustomer = await prisma.customer.findFirst({
+      where: { cnic }
+    });
+
+    if (existingCustomer) {
+      return res.status(400).json({
+        success: false,
+        message: 'A customer with this CNIC already exists'
+      });
+    }
+
     const customerData = {
-      ...req.body,
+      name,
+      fatherName,
+      cnic,
+      phone,
+      address,
       createdById: req.user.id,
     };
 
@@ -123,6 +157,41 @@ router.post('/', protect, async (req, res) => {
 // @access  Private
 router.put('/:id', protect, async (req, res) => {
   try {
+    const { cnic, phone } = req.body;
+
+    // Validate CNIC if provided: exactly 13 digits, numbers only
+    if (cnic && !/^\d{13}$/.test(cnic)) {
+      return res.status(400).json({
+        success: false,
+        message: 'CNIC must be exactly 13 digits and contain only numbers'
+      });
+    }
+
+    // Validate phone if provided: max 11 digits, numbers only
+    if (phone && !/^\d{1,11}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be at most 11 digits and contain only numbers'
+      });
+    }
+
+    // Check CNIC uniqueness (exclude current customer)
+    if (cnic) {
+      const existingCustomer = await prisma.customer.findFirst({
+        where: { 
+          cnic,
+          id: { not: req.params.id }
+        }
+      });
+
+      if (existingCustomer) {
+        return res.status(400).json({
+          success: false,
+          message: 'A customer with this CNIC already exists'
+        });
+      }
+    }
+
     const customer = await prisma.customer.update({
       where: { id: req.params.id },
       data: req.body,

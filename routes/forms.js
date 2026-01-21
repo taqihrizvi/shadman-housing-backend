@@ -68,6 +68,19 @@ router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) 
     // Log incoming data for debugging
     console.log('Biyana form data received:', JSON.stringify(req.body, null, 2));
     
+    // Validate agreement date vs last installment date
+    if (req.body.lastInstallmentDate) {
+      const agreementDate = new Date();
+      const lastInstallmentDate = new Date(req.body.lastInstallmentDate);
+      
+      if (agreementDate >= lastInstallmentDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Agreement date must be before the last installment date'
+        });
+      }
+    }
+    
     const formNumber = await generateFormNumber('BF');
     
     const biyanaData = {
@@ -283,6 +296,29 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), async (req, res) => {
   try {
+    // Validate agreement date vs calculated last installment date
+    if (req.body.paymentPlan && req.body.paymentPlan !== 'FULL_PAYMENT') {
+      const agreementDate = new Date(req.body.agreementDate);
+      
+      // Calculate last installment date based on payment plan
+      let installmentMonths = 0;
+      if (req.body.paymentPlan === 'INSTALLMENT_12') installmentMonths = 12;
+      else if (req.body.paymentPlan === 'INSTALLMENT_24') installmentMonths = 24;
+      else if (req.body.paymentPlan === 'INSTALLMENT_36') installmentMonths = 36;
+      
+      if (installmentMonths > 0) {
+        const lastInstallmentDate = new Date(agreementDate);
+        lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + installmentMonths);
+        
+        if (agreementDate >= lastInstallmentDate) {
+          return res.status(400).json({
+            success: false,
+            message: 'Agreement date must be before the last installment date'
+          });
+        }
+      }
+    }
+    
     const agreementNumber = await generateFormNumber('SA');
     
     // Convert paymentPlan to installmentMonths

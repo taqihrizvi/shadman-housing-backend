@@ -362,6 +362,32 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
 
     // Process in a transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Archive any existing active/approved agreements for this plot (except the current one being approved)
+      const existingAgreements = await tx.saleAgreement.findMany({
+        where: {
+          plotId: agreement.plotId,
+          id: { not: id },
+          isArchived: false,
+          status: 'APPROVED' // Only archive previously approved agreements
+        }
+      });
+
+      if (existingAgreements.length > 0) {
+        // Archive all existing agreements for this plot
+        await tx.saleAgreement.updateMany({
+          where: {
+            plotId: agreement.plotId,
+            id: { not: id },
+            isArchived: false,
+            status: 'APPROVED'
+          },
+          data: {
+            isArchived: true,
+            isActive: false
+          }
+        });
+      }
+
       // Update Sale Agreement status to APPROVED
       const updatedAgreement = await tx.saleAgreement.update({
         where: { id },
@@ -403,7 +429,8 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
       // If there's a related transfer, complete it and change plot status back to SOLD
       if (relatedTransfer) {
         // Archive the old sale agreement (the one that was locked during transfer)
-        const oldAgreement = await tx.saleAgreement.findFirst({
+        // Try multiple methods to find the old agreement
+        let oldAgreement = await tx.saleAgreement.findFirst({
           where: {
             plotId: agreement.plotId,
             isLocked: true,
@@ -411,12 +438,31 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
           }
         });
 
+        // If not found by transferId, try using previousSaleAgreementId from transfer
+        if (!oldAgreement && relatedTransfer.previousSaleAgreementId) {
+          oldAgreement = await tx.saleAgreement.findUnique({
+            where: { id: relatedTransfer.previousSaleAgreementId }
+          });
+        }
+
+        // If still not found, try finding any locked agreement for this plot
+        if (!oldAgreement) {
+          oldAgreement = await tx.saleAgreement.findFirst({
+            where: {
+              plotId: agreement.plotId,
+              isLocked: true,
+              isArchived: false
+            }
+          });
+        }
+
         if (oldAgreement) {
           await tx.saleAgreement.update({
             where: { id: oldAgreement.id },
             data: {
               isArchived: true,
-              isActive: false
+              isActive: false,
+              transferId: relatedTransfer.id // Ensure transferId is set
             }
           });
         }
@@ -484,15 +530,21 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
         },
       });
 
-      return updatedAgreement;
+      return { updatedAgreement, archivedCount: existingAgreements.length };
     });
+
+    let message = 'Sale Agreement approved';
+    if (relatedTransfer) {
+      message = 'Sale Agreement approved and transfer completed. Plot status changed to SOLD.';
+    }
+    if (result.archivedCount > 0) {
+      message += ` ${result.archivedCount} previous agreement(s) moved to archive.`;
+    }
 
     res.json({
       success: true,
-      data: result,
-      message: relatedTransfer 
-        ? 'Sale Agreement approved and transfer completed. Plot status changed to SOLD.'
-        : 'Sale Agreement approved',
+      data: result.updatedAgreement,
+      message: message,
     });
   } catch (error) {
     res.status(500).json({
@@ -693,12 +745,15 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
       });
     }
 
-    // Update Transfer status to APPROVED
+    // Update Transfer status to APPROVED only
+    // The old sale agreement should NOT be modified here
+    // It will be locked when the transfer is actually processed in /api/transfer/:id/approve
     const updatedTransfer = await prisma.transferForm.update({
       where: { id },
       data: {
         status: 'APPROVED',
         approvedById: req.user.id,
+        approvedAt: new Date(),
       },
       include: {
         fromCustomer: {
@@ -722,7 +777,6 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
             plotNo: true,
             project: true,
             size: true,
-
           },
         },
         createdBy: {
@@ -739,43 +793,34 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
       },
     });
 
-    // Update plot buyer
+    // Update plot status to TRANSFERRED and change buyer
     await prisma.inventory.update({
       where: { id: transfer.plotId },
       data: {
+        status: 'TRANSFERRED',
         buyerId: transfer.toCustomerId,
       },
     });
 
-    // Update all pending and future vouchers for this plot to the new customer
-    await prisma.voucher.updateMany({
-      where: {
-        plotId: transfer.plotId,
-        customerId: transfer.fromCustomerId,
-      },
-      data: {
-        customerId: transfer.toCustomerId,
-      },
-    });
-
-    // Update sale agreement customer if exists
-    await prisma.saleAgreement.updateMany({
-      where: {
-        plotId: transfer.plotId,
-        customerId: transfer.fromCustomerId,
-        status: 'APPROVED',
-      },
-      data: {
-        customerId: transfer.toCustomerId,
-      },
-    });
+    // Lock the previous sale agreement
+    if (transfer.previousSaleAgreementId) {
+      await prisma.saleAgreement.update({
+        where: { id: transfer.previousSaleAgreementId },
+        data: {
+          isLocked: true,
+          isActive: false,
+          transferId: transfer.id,
+          remarks: `Locked due to plot transfer ${transfer.transferNumber}`,
+        },
+      });
+    }
 
     // Create notification for the form creator
     await createNotification(
       transfer.createdById,
       'APPROVED',
       'Transfer Form Approved',
-      `Transfer form ${transfer.transferNumber} has been approved`,
+      `Transfer form ${transfer.transferNumber} has been approved. Please create a new sale agreement for the new owner.`,
       transfer.id,
       'TRANSFER'
     );
@@ -797,7 +842,7 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
     res.json({
       success: true,
       data: updatedTransfer,
-      message: 'Transfer form approved successfully',
+      message: 'Transfer form approved successfully. Please create a new sale agreement for the new owner.',
     });
   } catch (error) {
     res.status(500).json({
