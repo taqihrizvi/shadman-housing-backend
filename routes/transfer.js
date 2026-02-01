@@ -190,26 +190,33 @@ router.post('/', protect, async (req, res) => {
         }
       });
 
-      // Create notification for admin
-      const admins = await tx.user.findMany({
+      return newTransfer;
+    });
+
+    // Create notifications for admins (outside transaction to avoid timeout)
+    try {
+      const admins = await prisma.user.findMany({
         where: { role: 'ADMIN', isActive: true }
       });
 
-      for (const admin of admins) {
-        await tx.notification.create({
+      const notificationPromises = admins.map(admin =>
+        prisma.notification.create({
           data: {
             userId: admin.id,
             type: 'APPROVAL_PENDING',
             relatedType: 'TRANSFER',
-            relatedId: newTransfer.id,
+            relatedId: transfer.id,
             title: 'New Transfer Request',
-            message: `Transfer request for plot ${plot.plotNo} from ${plot.buyer.name} to ${toCustomer.name} is pending approval`
+            message: `Transfer request for plot ${transfer.plot.plotNo} from ${transfer.fromCustomer.name} to ${transfer.toCustomer.name} is pending approval`
           }
-        });
-      }
+        })
+      );
 
-      return newTransfer;
-    });
+      await Promise.all(notificationPromises);
+    } catch (notifError) {
+      // Log notification error but don't fail the request
+      console.error('Failed to create notifications:', notifError.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -317,20 +324,24 @@ router.put('/:id/approve', protect, async (req, res) => {
         });
       }
 
-      // Create notification for the agent who created the transfer
-      await tx.notification.create({
-        data: {
-          userId: transfer.createdById,
-          type: 'APPROVED',
-          relatedType: 'TRANSFER',
-          relatedId: transfer.id,
-          title: 'Transfer Approved',
-          message: `Transfer ${transfer.transferNumber} for plot ${transfer.plot.plotNo} has been approved. Please create a new sale agreement for the new owner.`
-        }
-      });
-
       return approvedTransfer;
     });
+
+    // Create notification outside transaction
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: result.createdById,
+          type: 'APPROVED',
+          relatedType: 'TRANSFER',
+          relatedId: result.id,
+          title: 'Transfer Approved',
+          message: `Transfer ${result.transferNumber} for plot ${result.plot.plotNo} has been approved. Please create a new sale agreement for the new owner.`
+        }
+      });
+    } catch (notifError) {
+      console.error('Failed to create notification:', notifError.message);
+    }
 
     res.json({
       success: true,
@@ -397,20 +408,24 @@ router.put('/:id/reject', protect, async (req, res) => {
         }
       });
 
-      // Notify creator
-      await tx.notification.create({
-        data: {
-          userId: transfer.createdById,
-          type: 'REJECTED',
-          relatedType: 'TRANSFER',
-          relatedId: transfer.id,
-          title: 'Transfer Rejected',
-          message: `Transfer ${transfer.transferNumber} has been rejected. ${reason || ''}`
-        }
-      });
-
       return rejectedTransfer;
     });
+
+    // Create notification outside transaction
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: result.createdById,
+          type: 'REJECTED',
+          relatedType: 'TRANSFER',
+          relatedId: result.id,
+          title: 'Transfer Rejected',
+          message: `Transfer ${result.transferNumber} has been rejected. ${reason || ''}`
+        }
+      });
+    } catch (notifError) {
+      console.error('Failed to create notification:', notifError.message);
+    }
 
     res.json({
       success: true,

@@ -30,7 +30,6 @@ router.get('/biyana', protect, authorize('ADMIN'), async (req, res) => {
             plotNo: true,
             project: true,
             size: true,
-            block: true,
             price: true,
           },
         },
