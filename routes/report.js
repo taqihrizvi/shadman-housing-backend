@@ -111,13 +111,13 @@ router.get('/dashboard', protect, async (req, res) => {
           status: 'APPROVED',
         },
         select: {
-          biyanaAmount: true,
+          tokenAmount: true,
         },
       });
 
       // Calculate total paid: Down Payment + Approved Biyana + Approved Vouchers
       const totalVoucherAmount = vouchers.reduce((sum, payment) => sum + payment.amount, 0);
-      const biyanaAmount = biyana?.biyanaAmount || 0;
+      const biyanaAmount = biyana?.tokenAmount || 0;
       const downPayment = agreement.downPayment || 0;
       const totalPaid = downPayment + biyanaAmount + totalVoucherAmount;
       

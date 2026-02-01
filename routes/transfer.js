@@ -114,7 +114,7 @@ router.post('/', protect, async (req, res) => {
         status: 'APPROVED'
       }
     });
-    const biyanaAmount = biyanaForm?.biyanaAmount || 0;
+    const biyanaAmount = biyanaForm?.tokenAmount || 0;
 
     // 2. Get down payment from sale agreement
     const downPayment = activeSaleAgreement?.downPayment || 0;
@@ -143,7 +143,7 @@ router.post('/', protect, async (req, res) => {
     if (transferAmount !== totalPaid) {
       return res.status(400).json({
         success: false,
-        message: `Transfer amount (Rs ${transferAmount.toLocaleString()}) must equal the total amount paid for this plot (Rs ${totalPaid.toLocaleString()}). Breakdown: Biyana Rs ${biyanaAmount.toLocaleString()} + Down Payment Rs ${downPayment.toLocaleString()} + Payments Rs ${paymentsTotal.toLocaleString()} = Rs ${totalPaid.toLocaleString()}`
+        message: `Transfer amount (Rs ${transferAmount.toLocaleString()}) must equal the total amount paid for this plot (Rs ${totalPaid.toLocaleString()}). Breakdown: Token Rs ${biyanaAmount.toLocaleString()} + Down Payment Rs ${downPayment.toLocaleString()} + Payments Rs ${paymentsTotal.toLocaleString()} = Rs ${totalPaid.toLocaleString()}`
       });
     }
 

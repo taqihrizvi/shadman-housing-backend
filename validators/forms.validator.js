@@ -13,15 +13,24 @@ export const biyanaSchema = Joi.object({
       'any.required': 'Plot ID is required',
     }),
   
-  biyanaAmount: Joi.number()
+  tokenAmount: Joi.number()
     .positive()
     .max(999999999)
     .required()
     .messages({
-      'number.base': 'Biyana amount must be a number',
-      'number.positive': 'Biyana amount must be positive',
-      'number.max': 'Biyana amount is too large',
-      'any.required': 'Biyana amount is required',
+      'number.base': 'Token amount must be a number',
+      'number.positive': 'Token amount must be positive',
+      'number.max': 'Token amount is too large',
+      'any.required': 'Token amount is required',
+    }),
+  
+  downPayment: Joi.number()
+    .min(0)
+    .optional()
+    .allow(null)
+    .messages({
+      'number.base': 'Down payment must be a number',
+      'number.min': 'Down payment cannot be negative',
     }),
   
   pricePerMarla: Joi.number()
@@ -116,34 +125,6 @@ export const biyanaSchema = Joi.object({
     .messages({
       'date.base': 'Invalid date format',
       'any.required': 'Date is required',
-    }),
-  
-  paymentMethod: Joi.string()
-    .valid('CASH', 'BANK_TRANSFER', 'CHEQUE')
-    .required()
-    .messages({
-      'any.only': 'Payment method must be CASH, BANK_TRANSFER, or CHEQUE',
-      'any.required': 'Payment method is required',
-    }),
-  
-  chequeNumber: Joi.string()
-    .when('paymentMethod', {
-      is: 'CHEQUE',
-      then: Joi.required(),
-      otherwise: Joi.optional().allow('', null),
-    })
-    .messages({
-      'any.required': 'Cheque number is required when payment method is CHEQUE',
-    }),
-  
-  bankName: Joi.string()
-    .when('paymentMethod', {
-      is: Joi.valid('BANK_TRANSFER', 'CHEQUE'),
-      then: Joi.required(),
-      otherwise: Joi.optional().allow('', null),
-    })
-    .messages({
-      'any.required': 'Bank name is required for bank transfers and cheques',
     }),
   
   notes: Joi.string()
@@ -289,10 +270,10 @@ export const paymentSchema = Joi.object({
     }),
   
   paymentMethod: Joi.string()
-    .valid('CASH', 'BANK_TRANSFER', 'CHEQUE')
+    .valid('BANK_DEPOSIT', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE')
     .required()
     .messages({
-      'any.only': 'Payment method must be CASH, BANK_TRANSFER, or CHEQUE',
+      'any.only': 'Payment method must be BANK_DEPOSIT, BANK_TRANSFER, CHEQUE, or ONLINE',
       'any.required': 'Payment method is required',
     }),
   

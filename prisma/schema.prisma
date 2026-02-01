@@ -37,7 +37,7 @@ enum PlotSize {
 }
 
 enum PaymentMethod {
-  CASH
+  BANK_DEPOSIT
   BANK_TRANSFER
   CHEQUE
   ONLINE
@@ -163,10 +163,12 @@ model Inventory {
 model Biyana {
   id            String         @id @default(uuid())
   formNumber    String         @unique
-  biyanaAmount  Float
-  paymentMethod PaymentMethod
+  tokenAmount   Float
+  paymentMethod PaymentMethod?
   chequeNumber  String?
   bankName      String?
+  accountNumber String?
+  slipNumber    String?
   transactionId String?
   date          DateTime       @default(now())
   remarks       String?
@@ -182,6 +184,7 @@ model Biyana {
   // Installment tracking fields
   pricePerMarla              Float?
   totalAmount                Float?
+  downPayment                Float?               @default(0)
   totalRemaining             Float?
   lastInstallmentDate        String?
   monthlyInstallments        Int?
@@ -192,10 +195,11 @@ model Biyana {
   installmentType            InstallmentType? @default(MONTHLY_ONLY)
 
   // Relations
-  customer   Customer  @relation(fields: [customerId], references: [id])
-  plot       Inventory @relation(fields: [plotId], references: [id])
-  createdBy  User      @relation("CreatedBiyana", fields: [createdById], references: [id])
-  approvedBy User?     @relation("ApprovedBiyana", fields: [approvedById], references: [id])
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  plot       Inventory  @relation(fields: [plotId], references: [id])
+  createdBy  User       @relation("CreatedBiyana", fields: [createdById], references: [id])
+  approvedBy User?      @relation("ApprovedBiyana", fields: [approvedById], references: [id])
+  vouchers   Voucher[]  @relation("BiyanaVouchers")
 
   @@index([formNumber])
   @@index([date])
@@ -225,13 +229,25 @@ model SaleAgreement {
   customerId        String
   plotId            String
   createdById       String
+  
+  // Payment plan tracking fields (inherited from Biyana)
+  pricePerMarla              Float?
+  totalRemaining             Float?
+  lastInstallmentDate        String?
+  monthlyInstallments        Int?
+  quarterlyInstallments      Int?
+  agreementDuration          String?
+  monthlyInstallmentAmount   Float?
+  quarterlyInstallmentAmount Float?
+  installmentType            InstallmentType?
 
   // Relations
-  customer   Customer  @relation(fields: [customerId], references: [id])
-  plot       Inventory @relation(fields: [plotId], references: [id])
-  createdBy  User      @relation("CreatedAgreements", fields: [createdById], references: [id])
-  approvedBy User?     @relation("ApprovedAgreements", fields: [approvedById], references: [id])
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  plot       Inventory  @relation(fields: [plotId], references: [id])
+  createdBy  User       @relation("CreatedAgreements", fields: [createdById], references: [id])
+  approvedBy User?      @relation("ApprovedAgreements", fields: [approvedById], references: [id])
   witnesses  Witness[]
+  vouchers   Voucher[]  @relation("SaleAgreementVouchers")
 
   @@index([agreementNumber])
   @@index([status])
@@ -272,11 +288,12 @@ model TransferForm {
   approvedById            String?
 
   // Relations
-  plot         Inventory @relation(fields: [plotId], references: [id])
-  fromCustomer Customer  @relation("TransferFrom", fields: [fromCustomerId], references: [id])
-  toCustomer   Customer  @relation("TransferTo", fields: [toCustomerId], references: [id])
-  createdBy    User      @relation("CreatedTransfers", fields: [createdById], references: [id])
-  approvedBy   User?     @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+  plot         Inventory  @relation(fields: [plotId], references: [id])
+  fromCustomer Customer   @relation("TransferFrom", fields: [fromCustomerId], references: [id])
+  toCustomer   Customer   @relation("TransferTo", fields: [toCustomerId], references: [id])
+  createdBy    User       @relation("CreatedTransfers", fields: [createdById], references: [id])
+  approvedBy   User?      @relation("ApprovedTransfers", fields: [approvedById], references: [id])
+  vouchers     Voucher[]  @relation("TransferVouchers")
 
   @@index([transferNumber])
   @@index([status])
@@ -291,12 +308,15 @@ model Voucher {
   paymentMethod PaymentMethod
   chequeNumber  String?
   bankName      String?
+  accountNumber String?
+  slipNumber    String?
   transactionId String?
   description   String?
   date          DateTime         @default(now())
   formType      PaymentFormType?
   formId        String?
   status        ApprovalStatus   @default(PENDING)
+  rejectionReason String?
   approvedAt    DateTime?
   approvedById  String?
   createdAt     DateTime         @default(now())
@@ -304,17 +324,28 @@ model Voucher {
   customerId    String
   plotId        String?
   createdById   String
+  
+  // Form relationships for voucher approval workflow
+  biyanaId          String?
+  saleAgreementId   String?
+  transferId        String?
 
   // Relations
-  customer   Customer   @relation(fields: [customerId], references: [id])
-  plot       Inventory? @relation(fields: [plotId], references: [id])
-  createdBy  User       @relation("CreatedVouchers", fields: [createdById], references: [id])
-  approvedBy User?      @relation("ApprovedVouchers", fields: [approvedById], references: [id])
+  customer      Customer        @relation(fields: [customerId], references: [id])
+  plot          Inventory?      @relation(fields: [plotId], references: [id])
+  createdBy     User            @relation("CreatedVouchers", fields: [createdById], references: [id])
+  approvedBy    User?           @relation("ApprovedVouchers", fields: [approvedById], references: [id])
+  biyana        Biyana?         @relation("BiyanaVouchers", fields: [biyanaId], references: [id])
+  saleAgreement SaleAgreement?  @relation("SaleAgreementVouchers", fields: [saleAgreementId], references: [id])
+  transfer      TransferForm?   @relation("TransferVouchers", fields: [transferId], references: [id])
 
   @@index([voucherNo])
   @@index([date])
   @@index([customerId])
   @@index([status])
+  @@index([biyanaId])
+  @@index([saleAgreementId])
+  @@index([transferId])
 }
 
 enum NotificationType {

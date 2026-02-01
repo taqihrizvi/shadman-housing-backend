@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/database.js';
 import { protect, authorize } from '../middleware/auth.js';
 import { createNotification } from './notifications.js';
+import { canApproveForm, getAllVouchersForForm } from '../middleware/formVoucherHelpers.js';
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ router.get('/biyana', protect, authorize('ADMIN'), async (req, res) => {
             fatherName: true,
             cnic: true,
             phone: true,
+            address: true,
           },
         },
         plot: {
@@ -28,13 +30,21 @@ router.get('/biyana', protect, authorize('ADMIN'), async (req, res) => {
             plotNo: true,
             project: true,
             size: true,
-
+            block: true,
+            price: true,
           },
         },
         createdBy: {
           select: {
             name: true,
             email: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            name: true,
+            email: true,
+            signature: true,
           },
         },
       },
@@ -56,7 +66,7 @@ router.get('/biyana', protect, authorize('ADMIN'), async (req, res) => {
 });
 
 // @route   PUT /api/approvals/biyana/:id/approve
-// @desc    Approve a Biyana form
+// @desc    Approve a Biyana form (REQUIRES approved voucher)
 // @access  Admin only
 router.put('/biyana/:id/approve', protect, authorize('ADMIN'), async (req, res) => {
   try {
@@ -77,6 +87,18 @@ router.put('/biyana/:id/approve', protect, authorize('ADMIN'), async (req, res) 
       return res.status(400).json({
         success: false,
         message: 'This Biyana form has already been processed',
+      });
+    }
+
+    // ✅ BUSINESS RULE: Check voucher approval status before approving form
+    const voucherCheck = await canApproveForm('BIYANA', id);
+    
+    if (!voucherCheck.canApprove) {
+      return res.status(400).json({
+        success: false,
+        message: voucherCheck.reason,
+        requiresVoucher: true,
+        latestVoucher: voucherCheck.latestVoucher,
       });
     }
 
@@ -156,6 +178,7 @@ router.put('/biyana/:id/approve', protect, authorize('ADMIN'), async (req, res) 
       success: true,
       data: updatedBiyana,
       message: 'Biyana form approved successfully',
+      voucherInfo: voucherCheck.latestVoucher,
     });
   } catch (error) {
     res.status(500).json({
@@ -296,7 +319,30 @@ router.get('/sale-agreement', protect, authorize('ADMIN'), async (req, res) => {
             plotNo: true,
             project: true,
             size: true,
-
+            price: true,
+            biyanaForms: {
+              where: {
+                status: 'APPROVED',
+              },
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 1,
+              select: {
+                tokenAmount: true,
+                downPayment: true,
+                totalAmount: true,
+                pricePerMarla: true,
+                totalRemaining: true,
+                monthlyInstallments: true,
+                quarterlyInstallments: true,
+                monthlyInstallmentAmount: true,
+                quarterlyInstallmentAmount: true,
+                installmentType: true,
+                lastInstallmentDate: true,
+                agreementDuration: true,
+              },
+            },
           },
         },
         createdBy: {
@@ -324,7 +370,7 @@ router.get('/sale-agreement', protect, authorize('ADMIN'), async (req, res) => {
 });
 
 // @route   PUT /api/approvals/sale-agreement/:id/approve
-// @desc    Approve a Sale Agreement
+// @desc    Approve a Sale Agreement (REQUIRES approved voucher & payment plan validation)
 // @access  Admin only
 router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (req, res) => {
   try {
@@ -350,6 +396,20 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
         message: 'This Sale Agreement has already been processed',
       });
     }
+
+    // ✅ BUSINESS RULE: Check voucher approval status before approving form
+    const voucherCheck = await canApproveForm('SALES_AGREEMENT', id);
+    
+    if (!voucherCheck.canApprove) {
+      return res.status(400).json({
+        success: false,
+        message: voucherCheck.reason,
+        requiresVoucher: true,
+        latestVoucher: voucherCheck.latestVoucher,
+      });
+    }
+
+    // Payment plan validation removed - no longer required to match Biyana form
 
     // Check if this is for a transferred plot
     const relatedTransfer = await prisma.transferForm.findFirst({
@@ -721,7 +781,7 @@ router.get('/transfer', protect, authorize('ADMIN'), async (req, res) => {
 });
 
 // @route   PUT /api/approvals/transfer/:id/approve
-// @desc    Approve a Transfer form
+// @desc    Approve a Transfer form (REQUIRES approved transfer fee voucher)
 // @access  Admin only
 router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res) => {
   try {
@@ -742,6 +802,18 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
       return res.status(400).json({
         success: false,
         message: 'This Transfer form has already been processed',
+      });
+    }
+
+    // ✅ BUSINESS RULE: Check voucher approval status before approving transfer
+    const voucherCheck = await canApproveForm('TRANSFER', id);
+    
+    if (!voucherCheck.canApprove) {
+      return res.status(400).json({
+        success: false,
+        message: voucherCheck.reason,
+        requiresVoucher: true,
+        latestVoucher: voucherCheck.latestVoucher,
       });
     }
 
@@ -1163,7 +1235,7 @@ router.put('/payments/:id/approve', protect, authorize('ADMIN'), async (req, res
 });
 
 // @route   PUT /api/approvals/payments/:id/reject
-// @desc    Reject a payment voucher
+// @desc    Reject a payment voucher (triggers circular loop - new voucher required)
 // @access  Admin only
 router.put('/payments/:id/reject', protect, authorize('ADMIN'), async (req, res) => {
   try {
@@ -1188,13 +1260,17 @@ router.put('/payments/:id/reject', protect, authorize('ADMIN'), async (req, res)
       });
     }
 
+    // ✅ BUSINESS RULE: Rejected voucher triggers circular loop
+    // - Voucher is marked REJECTED (read-only, cannot be reused)
+    // - Form remains PENDING
+    // - User must create NEW voucher
     const updatedVoucher = await prisma.voucher.update({
       where: { id },
       data: {
         status: 'REJECTED',
         approvedById: req.user.id,
         approvedAt: new Date(),
-        description: reason || voucher.description,
+        rejectionReason: reason || 'No reason provided',
       },
       include: {
         customer: {
@@ -1231,8 +1307,8 @@ router.put('/payments/:id/reject', protect, authorize('ADMIN'), async (req, res)
     await createNotification(
       voucher.createdById,
       'REJECTED',
-      'Payment Rejected',
-      `Your payment voucher ${voucher.voucherNumber} has been rejected${reason ? ': ' + reason : ''}`,
+      'Payment Rejected - New Voucher Required',
+      `Your payment voucher ${voucher.voucherNo} has been rejected. Please create a new voucher. Reason: ${reason || 'No reason provided'}`,
       voucher.id,
       'PAYMENT'
     );
@@ -1254,7 +1330,8 @@ router.put('/payments/:id/reject', protect, authorize('ADMIN'), async (req, res)
     res.json({
       success: true,
       data: updatedVoucher,
-      message: 'Payment voucher rejected',
+      message: 'Payment voucher rejected. A new voucher must be created and approved.',
+      requiresNewVoucher: true,
     });
   } catch (error) {
     res.status(500).json({

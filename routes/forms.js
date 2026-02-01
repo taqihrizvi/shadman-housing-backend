@@ -173,7 +173,7 @@ router.get('/sale-agreement', protect, async (req, res) => {
         });
         
         const vouchersTotal = vouchers.reduce((sum, v) => sum + v.amount, 0);
-        const biyanaAmount = biyana?.biyanaAmount || 0;
+        const biyanaAmount = biyana?.tokenAmount || 0;
         const totalPaid = agreement.downPayment + biyanaAmount + vouchersTotal;
         
         return {
@@ -242,7 +242,7 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
         status: 'APPROVED',
       },
       select: {
-        biyanaAmount: true,
+        tokenAmount: true,
         totalAmount: true,
         pricePerMarla: true,
         monthlyInstallments: true,
@@ -255,7 +255,7 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
     });
     
     const vouchersTotal = vouchers.reduce((sum, v) => sum + v.amount, 0);
-    const biyanaAmount = biyana?.biyanaAmount || 0;
+    const biyanaAmount = biyana?.tokenAmount || 0;
     const totalPaid = agreement.downPayment + biyanaAmount + vouchersTotal;
 
     res.json({

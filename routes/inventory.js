@@ -45,11 +45,15 @@ router.get('/', protect, async (req, res) => {
         },
         biyanaForms: {
           select: { 
-            biyanaAmount: true, 
+            tokenAmount: true, 
+            downPayment: true,
             date: true,
             totalAmount: true,
             monthlyInstallments: true,
+            quarterlyInstallments: true,
             monthlyInstallmentAmount: true,
+            quarterlyInstallmentAmount: true,
+            installmentType: true,
             agreementDuration: true,
             customer: {
               select: { name: true, fatherName: true, cnic: true, phone: true, address: true },

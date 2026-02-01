@@ -122,32 +122,18 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
     let finalAmount = amount;
     let finalCustomerId = customerId;
     let description = restData.description || '';
+    let biyanaId = null;
+    let saleAgreementId = null;
+    let transferId = null;
 
+    // ✅ BUSINESS RULE: Link voucher to form for approval workflow
     // Auto-fetch amounts for BIYANA and SALES_AGREEMENT types
     if (formType === 'BIYANA' && plotId) {
-      // Check if a Biyana voucher already exists for this plot
-      const existingBiyanaVoucher = await prisma.voucher.findFirst({
-        where: {
-          plotId: plotId,
-          formType: 'BIYANA',
-          status: {
-            in: ['PENDING', 'APPROVED']
-          }
-        }
-      });
-
-      if (existingBiyanaVoucher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Biyana voucher for this plot already exists'
-        });
-      }
-
-      // Fetch latest approved Biyana form for this plot
+      // Fetch latest PENDING Biyana form for this plot (not APPROVED - voucher must exist before approval)
       const biyanaForm = await prisma.biyana.findFirst({
         where: {
           plotId: plotId,
-          status: 'APPROVED'
+          status: 'PENDING'
         },
         orderBy: {
           createdAt: 'desc'
@@ -157,37 +143,37 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       if (!biyanaForm) {
         return res.status(400).json({
           success: false,
-          message: 'No approved Biyana form found for this plot'
+          message: 'No PENDING Biyana form found for this plot. Form must be created before voucher.'
         });
       }
 
-      finalAmount = biyanaForm.biyanaAmount;
-      finalCustomerId = biyanaForm.customerId;
-      description = description || `Biyana Payment - ${biyanaForm.formNumber}`;
-    } else if (formType === 'SALES_AGREEMENT' && plotId) {
-      // Check if a Sales Agreement voucher already exists for this plot
-      const existingSalesVoucher = await prisma.voucher.findFirst({
+      // Check if a non-rejected voucher already exists for this Biyana
+      const existingVoucher = await prisma.voucher.findFirst({
         where: {
-          plotId: plotId,
-          formType: 'SALES_AGREEMENT',
+          biyanaId: biyanaForm.id,
           status: {
             in: ['PENDING', 'APPROVED']
           }
         }
       });
 
-      if (existingSalesVoucher) {
+      if (existingVoucher) {
         return res.status(400).json({
           success: false,
-          message: 'Sales Agreement voucher for this plot already exists'
+          message: 'A voucher already exists for this Biyana form. Create a new voucher only if previous was rejected.'
         });
       }
 
-      // Fetch latest active Sale Agreement for this plot
+      finalAmount = biyanaForm.tokenAmount;
+      finalCustomerId = biyanaForm.customerId;
+      biyanaId = biyanaForm.id;
+      description = description || `Biyana Payment - ${biyanaForm.formNumber}`;
+    } else if (formType === 'SALES_AGREEMENT' && plotId) {
+      // Fetch latest PENDING Sale Agreement for this plot
       const saleAgreement = await prisma.saleAgreement.findFirst({
         where: {
           plotId: plotId,
-          status: 'APPROVED',
+          status: 'PENDING',
           isActive: true
         },
         orderBy: {
@@ -198,13 +184,71 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       if (!saleAgreement) {
         return res.status(400).json({
           success: false,
-          message: 'No active Sales Agreement found for this plot'
+          message: 'No PENDING Sales Agreement found for this plot. Form must be created before voucher.'
+        });
+      }
+
+      // Check if a non-rejected voucher already exists for this Sale Agreement
+      const existingVoucher = await prisma.voucher.findFirst({
+        where: {
+          saleAgreementId: saleAgreement.id,
+          status: {
+            in: ['PENDING', 'APPROVED']
+          }
+        }
+      });
+
+      if (existingVoucher) {
+        return res.status(400).json({
+          success: false,
+          message: 'A voucher already exists for this Sale Agreement. Create a new voucher only if previous was rejected.'
         });
       }
 
       finalAmount = saleAgreement.downPayment;
       finalCustomerId = saleAgreement.customerId;
+      saleAgreementId = saleAgreement.id;
       description = description || `Sales Agreement Down Payment - ${saleAgreement.agreementNumber}`;
+    } else if (formType === 'TRANSFER' && plotId) {
+      // Fetch latest PENDING Transfer form for this plot
+      const transferForm = await prisma.transferForm.findFirst({
+        where: {
+          plotId: plotId,
+          status: 'PENDING'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      if (!transferForm) {
+        return res.status(400).json({
+          success: false,
+          message: 'No PENDING Transfer form found for this plot. Form must be created before voucher.'
+        });
+      }
+
+      // Check if a non-rejected voucher already exists for this Transfer
+      const existingVoucher = await prisma.voucher.findFirst({
+        where: {
+          transferId: transferForm.id,
+          status: {
+            in: ['PENDING', 'APPROVED']
+          }
+        }
+      });
+
+      if (existingVoucher) {
+        return res.status(400).json({
+          success: false,
+          message: 'A voucher already exists for this Transfer form. Create a new voucher only if previous was rejected.'
+        });
+      }
+
+      finalAmount = transferForm.transferFee;
+      finalCustomerId = transferForm.toCustomerId; // New owner pays transfer fee
+      transferId = transferForm.id;
+      description = description || `Transfer Fee - ${transferForm.transferNumber}`;
     }
     
     const voucherData = {
@@ -215,7 +259,10 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       plotId,
       formType,
       description,
-      status: 'PENDING', // Set status as PENDING for admin approval
+      biyanaId,           // Link to Biyana form
+      saleAgreementId,    // Link to Sale Agreement
+      transferId,         // Link to Transfer form
+      status: 'PENDING',  // Set status as PENDING for admin approval
       createdById: req.user.id,
     };
 
