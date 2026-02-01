@@ -53,6 +53,7 @@ enum PaymentFormType {
   QUARTERLY
   BIYANA
   SALES_AGREEMENT
+  TRANSFER_FEE
 }
 
 enum AgreementStatus {
