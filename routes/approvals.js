@@ -1091,7 +1091,20 @@ router.get('/payments', protect, authorize('ADMIN'), async (req, res) => {
       where: {
         status: 'PENDING',
       },
-      include: {
+      select: {
+        id: true,
+        voucherNo: true,
+        amount: true,
+        date: true,
+        type: true,
+        formType: true,
+        paymentMethod: true,
+        bankName: true,
+        accountNumber: true,
+        slipNumber: true,
+        transactionId: true,
+        status: true,
+        createdAt: true,
         customer: {
           select: {
             name: true,
@@ -1105,7 +1118,6 @@ router.get('/payments', protect, authorize('ADMIN'), async (req, res) => {
             plotNo: true,
             project: true,
             size: true,
-
           },
         },
         createdBy: {
