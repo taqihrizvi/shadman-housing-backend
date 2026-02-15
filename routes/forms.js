@@ -178,6 +178,7 @@ router.get('/sale-agreement', protect, async (req, res) => {
         
         return {
           ...agreement,
+          biyana, // Include full biyana object for installment details
           currentOwner: agreement.plot?.buyer, // Current owner from inventory
           originalCustomer: agreement.customer, // Original customer from agreement
           totalPaid,
