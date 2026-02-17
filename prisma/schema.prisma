@@ -133,19 +133,21 @@ model Customer {
 }
 
 model Inventory {
-  id          String          @id @default(uuid())
-  plotNo      String          @unique
-  project     ProjectName
-  size        PlotSize
-  price       Float
-  status      InventoryStatus @default(AVAILABLE)
-  description String?
-  soldDate    DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  buyerId     String?
-  agentId     String?
-  createdById String
+  id           String          @id @default(uuid())
+  plotNo       String          @unique
+  project      ProjectName
+  size         PlotSize
+  price        Float
+  perMarlaPrice Float?
+  isCornerPlot Boolean         @default(false)
+  status       InventoryStatus @default(AVAILABLE)
+  description  String?
+  soldDate     DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  buyerId      String?
+  agentId      String?
+  createdById  String
 
   // Relations
   buyer          Customer?       @relation(fields: [buyerId], references: [id])
