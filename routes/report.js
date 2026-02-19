@@ -92,12 +92,13 @@ router.get('/dashboard', protect, async (req, res) => {
     const processedCustomers = new Set();
 
     for (const agreement of activeAgreements) {
-      // Get APPROVED vouchers only for this plot
+      // Get APPROVED and non-archived vouchers only for this plot
       const vouchers = await prisma.voucher.findMany({
         where: {
           plotId: agreement.plotId,
           type: 'RECEIPT',
           status: 'APPROVED',
+          isArchived: false, // Exclude archived vouchers
         },
         select: {
           amount: true,
@@ -109,6 +110,7 @@ router.get('/dashboard', protect, async (req, res) => {
         where: {
           plotId: agreement.plotId,
           status: 'APPROVED',
+          isArchived: false,
         },
         select: {
           tokenAmount: true,
@@ -293,7 +295,9 @@ router.get('/payments', protect, async (req, res) => {
   try {
     const { startDate, endDate, paymentMethod } = req.query;
 
-    const where = {};
+    const where = {
+      isArchived: false, // Exclude archived vouchers from payment reports
+    };
     
     if (startDate && endDate) {
       where.date = {
@@ -306,7 +310,7 @@ router.get('/payments', protect, async (req, res) => {
       where.paymentMethod = paymentMethod.toUpperCase().replace(' ', '_');
     }
 
-    // Get all matching vouchers
+    // Get all matching vouchers (excluding archived)
     const vouchers = await prisma.voucher.findMany({
       where,
       select: {

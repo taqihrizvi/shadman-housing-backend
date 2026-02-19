@@ -14,6 +14,7 @@ router.get('/biyana', protect, authorize('ADMIN'), async (req, res) => {
     const pendingBiyanas = await prisma.biyana.findMany({
       where: {
         status: 'PENDING',
+        isArchived: false,
       },
       include: {
         customer: {
@@ -678,10 +679,10 @@ router.put('/sale-agreement/:id/reject', protect, authorize('ADMIN'), async (req
       },
     });
 
-    // Update inventory status back to AVAILABLE when rejected
+    // Update inventory status back to RESERVED when rejected (Biyana is still valid)
     await prisma.inventory.update({
       where: { id: agreement.plotId },
-      data: { status: 'AVAILABLE', buyerId: null },
+      data: { status: 'RESERVED' },
     });
 
     // Create notification for the form creator
@@ -729,6 +730,7 @@ router.get('/transfer', protect, authorize('ADMIN'), async (req, res) => {
     const pendingTransfers = await prisma.transferForm.findMany({
       where: {
         status: 'PENDING',
+        isArchived: false,
       },
       include: {
         fromCustomer: {
@@ -1090,6 +1092,7 @@ router.get('/payments', protect, authorize('ADMIN'), async (req, res) => {
     const pendingPayments = await prisma.voucher.findMany({
       where: {
         status: 'PENDING',
+        isArchived: false, // Don't show archived vouchers in pending approvals
       },
       select: {
         id: true,
