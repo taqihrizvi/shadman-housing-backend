@@ -11,8 +11,6 @@ router.get('/', protect, async (req, res) => {
   try {
     const { status, project, search, page = 1, limit = 50 } = req.query;
     
-    console.log('📋 GET /api/inventory - Query params:', { status, project, search, page, limit });
-    
     const where = {};
     
     // Handle multiple status values (comma-separated)
@@ -32,7 +30,6 @@ router.get('/', protect, async (req, res) => {
       ];
     }
 
-    console.log('📋 Query where clause:', JSON.stringify(where, null, 2));
 
     const inventory = await prisma.inventory.findMany({
       where,
@@ -69,8 +66,6 @@ router.get('/', protect, async (req, res) => {
     });
 
     const count = await prisma.inventory.count({ where });
-
-    console.log(`✅ Retrieved ${inventory.length} inventory items`);
 
     res.json({
       success: true,
@@ -226,23 +221,101 @@ router.put('/:id', protect, async (req, res) => {
       });
     }
 
-    // If status is changing from RESERVED to AVAILABLE, reject associated Biyana forms
+    // If status is changing from RESERVED to AVAILABLE, archive Biyana forms and vouchers
     if (
       currentInventory.status === 'RESERVED' && 
       updateData.status && 
-      updateData.status !== 'RESERVED'
+      updateData.status === 'AVAILABLE'
     ) {
-      // Update all APPROVED Biyana forms for this plot to REJECTED
-      await prisma.biyana.updateMany({
-        where: {
-          plotId: req.params.id,
-          status: 'APPROVED',
-        },
+      console.log(`🔄 Plot ${currentInventory.plotNo} status changing from RESERVED to AVAILABLE`);
+      
+      // Archive all Biyana forms for this plot and set status to REJECTED
+      const archivedBiyanas = await prisma.biyana.updateMany({
+        where: { plotId: req.params.id },
         data: {
+          isArchived: true,
+          archivedAt: new Date(),
           status: 'REJECTED',
           updatedAt: new Date(),
         },
       });
+      console.log(`📝 Archived ${archivedBiyanas.count} Biyana form(s)`);
+
+      // Archive all vouchers associated with this plot
+      const archivedVouchers = await prisma.voucher.updateMany({
+        where: {
+          plotId: req.params.id,
+          isArchived: false,
+        },
+        data: {
+          isArchived: true,
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      
+      console.log(`📦 Archived ${archivedVouchers.count} voucher(s) for plot ${currentInventory.plotNo}`);
+      
+      // Clear the buyer ID since plot is becoming available
+      updateData.buyerId = null;
+    }
+
+    // If status is changing from SOLD to AVAILABLE, archive agreements, Biyana, transfer forms, and vouchers
+    if (
+      currentInventory.status === 'SOLD' &&
+      updateData.status &&
+      updateData.status === 'AVAILABLE'
+    ) {
+      console.log(`🔄 Plot ${currentInventory.plotNo} status changing from SOLD to AVAILABLE`);
+      const plotId = req.params.id;
+
+      // Archive all Sale Agreements for this plot
+      const archivedAgreements = await prisma.saleAgreement.updateMany({
+        where: { plotId },
+        data: {
+          isArchived: true,
+          isActive: false,
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`📄 Archived ${archivedAgreements.count} sale agreement(s)`);
+
+      // Archive all Biyana forms for this plot
+      const archivedBiyanas = await prisma.biyana.updateMany({
+        where: { plotId },
+        data: {
+          isArchived: true,
+          archivedAt: new Date(),
+          status: 'REJECTED',
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`📝 Archived ${archivedBiyanas.count} Biyana form(s)`);
+
+      // Archive all Transfer forms for this plot
+      const archivedTransfers = await prisma.transferForm.updateMany({
+        where: { plotId },
+        data: {
+          isArchived: true,
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`🔄 Archived ${archivedTransfers.count} transfer form(s)`);
+
+      // Archive all vouchers for this plot
+      const archivedVouchers = await prisma.voucher.updateMany({
+        where: { plotId, isArchived: false },
+        data: {
+          isArchived: true,
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`📦 Archived ${archivedVouchers.count} voucher(s) for plot ${currentInventory.plotNo}`);
+
+      // Clear the buyer ID since plot is becoming available
+      updateData.buyerId = null;
     }
 
     const inventory = await prisma.inventory.update({

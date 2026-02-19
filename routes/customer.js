@@ -269,12 +269,13 @@ router.get('/:id/pending-payments', protect, async (req, res) => {
     // Calculate pending payments for each plot
     const pendingPayments = await Promise.all(
       agreements.map(async (agreement) => {
-        // Get APPROVED vouchers only for this plot
+        // Get APPROVED and non-archived vouchers only for this plot
         const vouchers = await prisma.voucher.findMany({
           where: {
             plotId: agreement.plotId,
             type: 'RECEIPT',
             status: 'APPROVED',
+            isArchived: false, // Exclude archived vouchers
           },
           select: { amount: true, date: true },
         });
@@ -284,6 +285,7 @@ router.get('/:id/pending-payments', protect, async (req, res) => {
           where: {
             plotId: agreement.plotId,
             status: 'APPROVED',
+            isArchived: false,
           },
           select: {
             biyanaAmount: true,

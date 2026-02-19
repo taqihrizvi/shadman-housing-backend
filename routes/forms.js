@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../config/database.js';
-import { protect } from '../middleware/auth.js';
+import { protect, authorize } from '../middleware/auth.js';
 import { createNotification } from './notifications.js';
 import { validateRequest } from '../middleware/security.js';
 import { biyanaSchema, saleAgreementSchema, paymentSchema } from '../validators/forms.validator.js';
@@ -33,12 +33,41 @@ const generateFormNumber = async (prefix) => {
 
 // ============ BIYANA ROUTES ============
 
+// @route   GET /api/forms/biyana/archived
+// @desc    Get all archived biyana forms
+// @access  Private
+router.get('/biyana/archived', protect, async (req, res) => {
+  try {
+    const biyanas = await prisma.biyana.findMany({
+      where: { isArchived: true },
+      include: {
+        customer: { select: { name: true, fatherName: true, cnic: true, phone: true, address: true } },
+        plot: { select: { plotNo: true, project: true, size: true, price: true } },
+        createdBy: { select: { name: true } },
+        approvedBy: { select: { name: true, signature: true } },
+      },
+      orderBy: { archivedAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      data: biyanas,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
 // @route   GET /api/forms/biyana
-// @desc    Get all biyana forms
+// @desc    Get all biyana forms (excludes archived)
 // @access  Private
 router.get('/biyana', protect, async (req, res) => {
   try {
     const biyanas = await prisma.biyana.findMany({
+      where: { isArchived: false },
       include: {
         customer: { select: { name: true, fatherName: true, cnic: true, phone: true, address: true } },
         plot: { select: { plotNo: true, project: true, size: true, price: true } },
@@ -65,9 +94,6 @@ router.get('/biyana', protect, async (req, res) => {
 // @access  Private
 router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) => {
   try {
-    // Log incoming data for debugging
-    console.log('Biyana form data received:', JSON.stringify(req.body, null, 2));
-    
     // Validate agreement date vs last installment date
     if (req.body.lastInstallmentDate) {
       const agreementDate = new Date();
@@ -155,12 +181,13 @@ router.get('/sale-agreement', protect, async (req, res) => {
     // Calculate total paid (downPayment + biyana + vouchers) for each agreement
     const agreementsWithPayments = await Promise.all(
       agreements.map(async (agreement) => {
-        // Get APPROVED vouchers only for this plot (regardless of customer)
+        // Get APPROVED and non-archived vouchers only for this plot (regardless of customer)
         const vouchers = await prisma.voucher.findMany({
           where: {
             plotId: agreement.plotId,
             type: 'RECEIPT',
             status: 'APPROVED',
+            isArchived: false, // Exclude archived vouchers
           },
         });
         
@@ -169,6 +196,7 @@ router.get('/sale-agreement', protect, async (req, res) => {
           where: {
             plotId: agreement.plotId,
             status: 'APPROVED',
+            isArchived: false,
           },
         });
         
@@ -227,13 +255,14 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
       });
     }
 
-    // Get vouchers and biyana for payment calculations (APPROVED only)
+    // Get vouchers and biyana for payment calculations (APPROVED and non-archived only)
     // Filter by plot only - payments are tied to the plot, not the customer
     const vouchers = await prisma.voucher.findMany({
       where: {
         plotId: agreement.plotId,
         type: 'RECEIPT',
         status: 'APPROVED',
+        isArchived: false, // Exclude archived vouchers
       },
     });
     
@@ -241,6 +270,7 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
       where: {
         plotId: agreement.plotId,
         status: 'APPROVED',
+        isArchived: false,
       },
       select: {
         tokenAmount: true,
@@ -407,11 +437,12 @@ router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), as
 // ============ TRANSFER FORM ROUTES ============
 
 // @route   GET /api/forms/transfer
-// @desc    Get all transfer forms
+// @desc    Get all transfer forms (excludes archived)
 // @access  Private
 router.get('/transfer', protect, async (req, res) => {
   try {
     const transfers = await prisma.transferForm.findMany({
+      where: { isArchived: false },
       include: {
         plot: { select: { plotNo: true, project: true, size: true } },
         fromCustomer: { select: { name: true, fatherName: true, cnic: true, phone: true, address: true } },

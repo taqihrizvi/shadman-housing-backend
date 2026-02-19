@@ -28,9 +28,14 @@ const generateVoucherNumber = async () => {
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { search, type, startDate, endDate, page = 1, limit = 50 } = req.query;
+    const { search, type, startDate, endDate, page = 1, limit = 50, includeArchived } = req.query;
     
     const where = {};
+    
+    // Exclude archived vouchers by default (unless explicitly requested)
+    if (includeArchived !== 'true') {
+      where.isArchived = false;
+    }
     
     if (type) where.type = type.toUpperCase().replace(' ', '_');
     if (search) {
@@ -54,6 +59,55 @@ router.get('/', protect, async (req, res) => {
         createdBy: { select: { name: true } },
       },
       orderBy: { date: 'desc' },
+      take: limit * 1,
+      skip: (page - 1) * limit,
+    });
+
+    const count = await prisma.voucher.count({ where });
+
+    res.json({
+      success: true,
+      data: vouchers,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        pages: Math.ceil(count / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// @route   GET /api/vouchers/archived/all
+// @desc    Get all archived vouchers (must be before /:id)
+// @access  Private
+router.get('/archived/all', protect, async (req, res) => {
+  try {
+    const { search, page = 1, limit = 50 } = req.query;
+    
+    const where = {
+      isArchived: true,
+    };
+    
+    if (search) {
+      where.OR = [
+        { voucherNo: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const vouchers = await prisma.voucher.findMany({
+      where,
+      include: {
+        customer: { select: { name: true, cnic: true, phone: true } },
+        plot: { select: { plotNo: true, project: true } },
+        createdBy: { select: { name: true } },
+      },
+      orderBy: { archivedAt: 'desc' },
       take: limit * 1,
       skip: (page - 1) * limit,
     });
@@ -133,7 +187,8 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       const biyanaForm = await prisma.biyana.findFirst({
         where: {
           plotId: plotId,
-          status: 'PENDING'
+          status: 'PENDING',
+          isArchived: false,
         },
         orderBy: {
           createdAt: 'desc'
@@ -141,9 +196,18 @@ router.post('/', protect, validateRequest(paymentSchema), async (req, res) => {
       });
 
       if (!biyanaForm) {
+        // Check if there are any biyana forms for this plot to provide better error message
+        const existingBiyanaForms = await prisma.biyana.findMany({
+          where: { plotId: plotId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, formNumber: true, status: true }
+        });
+        
         return res.status(400).json({
           success: false,
-          message: 'No PENDING Biyana form found for this plot. Form must be created before voucher.'
+          message: existingBiyanaForms.length > 0 
+            ? `No PENDING Biyana form found. Current forms: ${existingBiyanaForms.map(f => `${f.formNumber}(${f.status})`).join(', ')}` 
+            : 'No PENDING Biyana form found for this plot. Form must be created before voucher.'
         });
       }
 

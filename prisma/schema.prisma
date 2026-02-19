@@ -178,6 +178,8 @@ model Biyana {
   status        ApprovalStatus @default(PENDING)
   approvedAt    DateTime?
   approvedById  String?
+  isArchived    Boolean        @default(false) // Archived when plot status changes from RESERVED to AVAILABLE
+  archivedAt    DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   customerId    String
@@ -207,6 +209,7 @@ model Biyana {
   @@index([formNumber])
   @@index([date])
   @@index([status])
+  @@index([isArchived])
 }
 
 model SaleAgreement {
@@ -282,6 +285,8 @@ model TransferForm {
   completedAt             DateTime? // When new agreement is approved and transfer is complete
   previousSaleAgreementId String? // Reference to old agreement that gets locked
   newSaleAgreementId      String? // Reference to new agreement created after transfer
+  isArchived              Boolean        @default(false) // Archived when plot status changes from SOLD to AVAILABLE
+  archivedAt              DateTime?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   plotId                  String
@@ -301,6 +306,7 @@ model TransferForm {
   @@index([transferNumber])
   @@index([status])
   @@index([plotId])
+  @@index([isArchived])
 }
 
 model Voucher {
@@ -322,6 +328,8 @@ model Voucher {
   rejectionReason String?
   approvedAt    DateTime?
   approvedById  String?
+  isArchived    Boolean          @default(false) // Archived when plot status changes from RESERVED to AVAILABLE
+  archivedAt    DateTime?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   customerId    String
@@ -346,6 +354,7 @@ model Voucher {
   @@index([date])
   @@index([customerId])
   @@index([status])
+  @@index([isArchived])
   @@index([biyanaId])
   @@index([saleAgreementId])
   @@index([transferId])

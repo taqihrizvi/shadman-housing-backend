@@ -111,7 +111,8 @@ router.post('/', protect, async (req, res) => {
     const biyanaForm = await prisma.biyana.findFirst({
       where: {
         plotId,
-        status: 'APPROVED'
+        status: 'APPROVED',
+        isArchived: false,
       }
     });
     const biyanaAmount = biyanaForm?.tokenAmount || 0;
@@ -119,25 +120,18 @@ router.post('/', protect, async (req, res) => {
     // 2. Get down payment from sale agreement
     const downPayment = activeSaleAgreement?.downPayment || 0;
 
-    // 3. Get all payment vouchers for this plot
+    // 3. Get all APPROVED and non-archived payment vouchers for this plot
     const payments = await prisma.voucher.findMany({
       where: {
         plotId,
         type: 'PAYMENT',
-        status: 'APPROVED'
+        status: 'APPROVED',
+        isArchived: false, // Exclude archived vouchers
       }
     });
     const paymentsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
     const totalPaid = biyanaAmount + downPayment + paymentsTotal;
-
-    console.log('Total Paid Calculation:', {
-      biyana: biyanaAmount,
-      downPayment: downPayment,
-      payments: paymentsTotal,
-      total: totalPaid,
-      transferAmount: transferAmount
-    });
 
     // Validate transfer amount matches total paid for the plot
     if (transferAmount !== totalPaid) {
@@ -559,15 +553,68 @@ router.put('/:id/complete', protect, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/transfer/archived
+ * @desc    Get all archived transfer forms (must be before /:id)
+ * @access  Private
+ */
+router.get('/archived', protect, async (req, res) => {
+  try {
+    const transfers = await prisma.transferForm.findMany({
+      where: { isArchived: true },
+      include: {
+        plot: {
+          select: {
+            plotNo: true,
+            project: true,
+            size: true,
+            price: true,
+          },
+        },
+        fromCustomer: {
+          select: {
+            name: true,
+            fatherName: true,
+            cnic: true,
+            phone: true,
+          },
+        },
+        toCustomer: {
+          select: {
+            name: true,
+            fatherName: true,
+            cnic: true,
+            phone: true,
+          },
+        },
+        createdBy: { select: { name: true, email: true } },
+        approvedBy: { select: { name: true, email: true } },
+      },
+      orderBy: { archivedAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      data: transfers,
+    });
+  } catch (error) {
+    console.error('Get archived transfers error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+/**
  * @route   GET /api/transfer
- * @desc    Get all transfer requests
+ * @desc    Get all transfer requests (excludes archived)
  * @access  Private
  */
 router.get('/', protect, async (req, res) => {
   try {
     const { status, plotId } = req.query;
 
-    const where = {};
+    const where = { isArchived: false };
     if (status) where.status = status;
     if (plotId) where.plotId = plotId;
 
