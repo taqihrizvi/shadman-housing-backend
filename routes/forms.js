@@ -12,22 +12,22 @@ const generateFormNumber = async (prefix) => {
   const year = new Date().getFullYear();
   const lastForm = await (
     prefix === 'BF' ? prisma.biyana :
-    prefix === 'SA' ? prisma.saleAgreement :
-    prisma.transferForm
+      prefix === 'SA' ? prisma.saleAgreement :
+        prisma.transferForm
   ).findFirst({
     orderBy: { createdAt: 'desc' },
   });
-  
+
   let number = 1;
   if (lastForm) {
     const lastNumber = parseInt(lastForm[
       prefix === 'BF' ? 'formNumber' :
-      prefix === 'SA' ? 'agreementNumber' :
-      'transferNumber'
+        prefix === 'SA' ? 'agreementNumber' :
+          'transferNumber'
     ].split('-')[2]);
     number = lastNumber + 1;
   }
-  
+
   return `${prefix}-${year}-${String(number).padStart(4, '0')}`;
 };
 
@@ -45,6 +45,7 @@ router.get('/biyana/archived', protect, async (req, res) => {
         plot: { select: { plotNo: true, project: true, size: true, price: true } },
         createdBy: { select: { name: true } },
         approvedBy: { select: { name: true, signature: true } },
+        vouchers: true,
       },
       orderBy: { archivedAt: 'desc' },
     });
@@ -98,7 +99,7 @@ router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) 
     if (req.body.lastInstallmentDate) {
       const agreementDate = new Date();
       const lastInstallmentDate = new Date(req.body.lastInstallmentDate);
-      
+
       if (agreementDate >= lastInstallmentDate) {
         return res.status(400).json({
           success: false,
@@ -106,9 +107,9 @@ router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) 
         });
       }
     }
-    
+
     const formNumber = await generateFormNumber('BF');
-    
+
     const biyanaData = {
       ...req.body,
       formNumber,
@@ -131,7 +132,7 @@ router.post('/biyana', protect, validateRequest(biyanaSchema), async (req, res) 
       where: { role: 'ADMIN' },
       select: { id: true },
     });
-    
+
     for (const admin of admins) {
       await createNotification(
         admin.id,
@@ -165,15 +166,17 @@ router.get('/sale-agreement', protect, async (req, res) => {
     const agreements = await prisma.saleAgreement.findMany({
       include: {
         customer: { select: { name: true, fatherName: true, cnic: true, phone: true, address: true } },
-        plot: { 
-          select: { 
-            plotNo: true, 
-            project: true, 
+        plot: {
+          select: {
+            plotNo: true,
+            project: true,
             size: true,
             buyer: { select: { id: true, name: true, fatherName: true, cnic: true, phone: true, address: true } }
-          } 
+          }
         },
         createdBy: { select: { name: true } },
+        approvedBy: { select: { name: true, signature: true } },
+        vouchers: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -190,7 +193,7 @@ router.get('/sale-agreement', protect, async (req, res) => {
             isArchived: false, // Exclude archived vouchers
           },
         });
-        
+
         // Get APPROVED biyana only
         const biyana = await prisma.biyana.findFirst({
           where: {
@@ -199,11 +202,11 @@ router.get('/sale-agreement', protect, async (req, res) => {
             isArchived: false,
           },
         });
-        
+
         const vouchersTotal = vouchers.reduce((sum, v) => sum + v.amount, 0);
         const biyanaAmount = biyana?.tokenAmount || 0;
         const totalPaid = agreement.downPayment + biyanaAmount + vouchersTotal;
-        
+
         return {
           ...agreement,
           biyana, // Include full biyana object for installment details
@@ -244,7 +247,9 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
           },
         },
         createdBy: { select: { name: true, signature: true } },
+        approvedBy: { select: { name: true, signature: true } },
         witnesses: true,
+        vouchers: true,
       },
     });
 
@@ -265,7 +270,7 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
         isArchived: false, // Exclude archived vouchers
       },
     });
-    
+
     const biyana = await prisma.biyana.findFirst({
       where: {
         plotId: agreement.plotId,
@@ -284,7 +289,7 @@ router.get('/sale-agreement/:id', protect, async (req, res) => {
         installmentType: true,
       },
     });
-    
+
     const vouchersTotal = vouchers.reduce((sum, v) => sum + v.amount, 0);
     const biyanaAmount = biyana?.tokenAmount || 0;
     const totalPaid = agreement.downPayment + biyanaAmount + vouchersTotal;
@@ -330,17 +335,17 @@ router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), as
     // Validate agreement date vs calculated last installment date
     if (req.body.paymentPlan && req.body.paymentPlan !== 'FULL_PAYMENT') {
       const agreementDate = new Date(req.body.agreementDate);
-      
+
       // Calculate last installment date based on payment plan
       let installmentMonths = 0;
       if (req.body.paymentPlan === 'INSTALLMENT_12') installmentMonths = 12;
       else if (req.body.paymentPlan === 'INSTALLMENT_24') installmentMonths = 24;
       else if (req.body.paymentPlan === 'INSTALLMENT_36') installmentMonths = 36;
-      
+
       if (installmentMonths > 0) {
         const lastInstallmentDate = new Date(agreementDate);
         lastInstallmentDate.setMonth(lastInstallmentDate.getMonth() + installmentMonths);
-        
+
         if (agreementDate >= lastInstallmentDate) {
           return res.status(400).json({
             success: false,
@@ -349,13 +354,13 @@ router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), as
         }
       }
     }
-    
+
     const agreementNumber = await generateFormNumber('SA');
-    
+
     // Convert paymentPlan to installmentMonths
     let installmentMonths = null;
     let monthlyAmount = null;
-    
+
     if (req.body.paymentPlan) {
       const plan = req.body.paymentPlan;
       if (plan === 'INSTALLMENT_12') {
@@ -367,14 +372,14 @@ router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), as
       } else if (plan === 'FULL_PAYMENT') {
         installmentMonths = 0;
       }
-      
+
       // Calculate monthly amount if installments
       if (installmentMonths > 0) {
         const remainingAmount = req.body.totalAmount - req.body.downPayment;
         monthlyAmount = remainingAmount / installmentMonths;
       }
     }
-    
+
     const agreementData = {
       customerId: req.body.customerId,
       plotId: req.body.plotId,
@@ -408,7 +413,7 @@ router.post('/sale-agreement', protect, validateRequest(saleAgreementSchema), as
       where: { role: 'ADMIN' },
       select: { id: true },
     });
-    
+
     for (const admin of admins) {
       await createNotification(
         admin.id,
@@ -471,7 +476,7 @@ router.get('/transfer', protect, async (req, res) => {
 router.post('/transfer', protect, async (req, res) => {
   try {
     const transferNumber = await generateFormNumber('TF');
-    
+
     const transferData = {
       plotId: req.body.plotId,
       fromCustomerId: req.body.fromCustomerId,
@@ -494,7 +499,7 @@ router.post('/transfer', protect, async (req, res) => {
       where: { role: 'ADMIN' },
       select: { id: true },
     });
-    
+
     for (const admin of admins) {
       await createNotification(
         admin.id,
@@ -526,7 +531,7 @@ router.put('/transfer/:id/approve', protect, async (req, res) => {
     const transfer = await prisma.transferForm.findUnique({
       where: { id: req.params.id },
     });
-    
+
     if (!transfer) {
       return res.status(404).json({
         success: false,

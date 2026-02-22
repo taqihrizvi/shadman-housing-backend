@@ -18,6 +18,7 @@ import reportRoutes from './routes/report.js';
 import approvalRoutes from './routes/approvals.js';
 import notificationRoutes from './routes/notifications.js';
 import transferRoutes from './routes/transfer.js';
+import userRoutes from './routes/users.js';
 
 // Load environment variables
 dotenv.config();
@@ -59,7 +60,7 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -109,6 +110,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/transfer', transferRoutes);
+app.use('/api/users', userRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -129,7 +131,7 @@ const startServer = async () => {
   try {
     await prisma.$connect();
     console.log('✅ PostgreSQL connected successfully');
-    
+
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });

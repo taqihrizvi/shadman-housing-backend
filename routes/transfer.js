@@ -106,7 +106,7 @@ router.post('/', protect, async (req, res) => {
 
     // Calculate total amount paid against the plot (regardless of who paid)
     // This includes: biyana + down payment + all payment vouchers
-    
+
     // 1. Get biyana amount for this plot
     const biyanaForm = await prisma.biyana.findFirst({
       where: {
@@ -588,6 +588,7 @@ router.get('/archived', protect, async (req, res) => {
         },
         createdBy: { select: { name: true, email: true } },
         approvedBy: { select: { name: true, email: true } },
+        vouchers: true,
       },
       orderBy: { archivedAt: 'desc' },
     });
@@ -648,7 +649,8 @@ router.get('/', protect, async (req, res) => {
         },
         approvedBy: {
           select: { name: true, email: true, signature: true }
-        }
+        },
+        vouchers: true
       },
       orderBy: { createdAt: 'desc' }
     });
