@@ -92,7 +92,7 @@ router.put('/biyana/:id/approve', protect, authorize('ADMIN'), async (req, res) 
 
     // ✅ BUSINESS RULE: Check voucher approval status before approving form
     const voucherCheck = await canApproveForm('BIYANA', id);
-    
+
     if (!voucherCheck.canApprove) {
       return res.status(400).json({
         success: false,
@@ -351,6 +351,13 @@ router.get('/sale-agreement', protect, authorize('ADMIN'), async (req, res) => {
             email: true,
           },
         },
+        approvedBy: {
+          select: {
+            name: true,
+            email: true,
+            signature: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -399,7 +406,7 @@ router.put('/sale-agreement/:id/approve', protect, authorize('ADMIN'), async (re
 
     // ✅ BUSINESS RULE: Check voucher approval status before approving form
     const voucherCheck = await canApproveForm('SALES_AGREEMENT', id);
-    
+
     if (!voucherCheck.canApprove) {
       return res.status(400).json({
         success: false,
@@ -763,6 +770,13 @@ router.get('/transfer', protect, authorize('ADMIN'), async (req, res) => {
             email: true,
           },
         },
+        approvedBy: {
+          select: {
+            name: true,
+            email: true,
+            signature: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -808,7 +822,7 @@ router.put('/transfer/:id/approve', protect, authorize('ADMIN'), async (req, res
 
     // ✅ BUSINESS RULE: Check voucher approval status before approving transfer
     const voucherCheck = await canApproveForm('TRANSFER', id);
-    
+
     if (!voucherCheck.canApprove) {
       return res.status(400).json({
         success: false,
@@ -1127,6 +1141,13 @@ router.get('/payments', protect, authorize('ADMIN'), async (req, res) => {
           select: {
             name: true,
             email: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            name: true,
+            email: true,
+            signature: true,
           },
         },
       },
