@@ -48,6 +48,7 @@ const createUserSchema = Joi.object({
     email: Joi.string().email().required(),
     password: Joi.string().min(8).required(),
     role: Joi.string().valid('ADMIN', 'MANAGER').required(),
+    signature: Joi.any().optional().allow(null, ''),
 });
 
 const updateUserSchema = Joi.object({
@@ -55,6 +56,7 @@ const updateUserSchema = Joi.object({
     email: Joi.string().email(),
     role: Joi.string().valid('ADMIN', 'MANAGER'),
     isActive: Joi.boolean(),
+    signature: Joi.any().optional().allow(null, ''),
 });
 
 // @route   GET /api/users
