@@ -190,15 +190,20 @@ router.get('/sales', protect, async (req, res) => {
       where.project = project;
     }
 
-    // Get sold inventory with soldDate for grouping
+    // Get sold inventory with buyer for grouping and recent sales list
     const soldInventory = await prisma.inventory.findMany({
       where,
       select: {
+        id: true,
+        plotNo: true,
         soldDate: true,
         project: true,
         price: true,
-        agentId: true,
+        buyer: {
+          select: { name: true },
+        },
       },
+      orderBy: { soldDate: 'desc' },
     });
 
     // Monthly sales data - group manually
@@ -242,42 +247,45 @@ router.get('/sales', protect, async (req, res) => {
       revenue: data.revenue,
     }));
 
-    // Top agents - group manually and get top 5
-    const agentMap = {};
-    soldInventory.forEach(item => {
-      if (item.agentId) {
-        if (!agentMap[item.agentId]) {
-          agentMap[item.agentId] = { sales: 0, revenue: 0 };
-        }
-        agentMap[item.agentId].sales += 1;
-        agentMap[item.agentId].revenue += item.price || 0;
-      }
-    });
-
-    // Get agent info for top agents
-    const topAgentIds = Object.entries(agentMap)
-      .sort((a, b) => b[1].revenue - a[1].revenue)
-      .slice(0, 5)
-      .map(([agentId]) => agentId);
-
-    const agentInfos = await prisma.user.findMany({
-      where: { id: { in: topAgentIds } },
-      select: { id: true, name: true },
-    });
-
-    const topAgents = topAgentIds.map(agentId => ({
-      _id: agentId,
-      sales: agentMap[agentId].sales,
-      revenue: agentMap[agentId].revenue,
-      agentInfo: agentInfos.find(a => a.id === agentId),
+    const recentSales = soldInventory.slice(0, 50).map((item) => ({
+      id: item.id,
+      date: item.soldDate,
+      plot: item.plotNo,
+      customer: item.buyer?.name || 'N/A',
+      amount: item.price,
     }));
+
+    const totalInventory = await prisma.inventory.count();
+    const currentAvailable = await prisma.inventory.count({ where: { status: 'AVAILABLE' } });
+    const endDateObj = endDate ? new Date(endDate) : new Date();
+    const soldByEndOfPeriod = await prisma.inventory.count({
+      where: { status: 'SOLD', soldDate: { lte: endDateObj } },
+    });
+    const listingsAtEndOfPeriod = totalInventory - soldByEndOfPeriod;
+
+    const yearNum = endDateObj.getFullYear();
+    const monthlyListings = [];
+    for (let month = 1; month <= 12; month++) {
+      const lastDay = new Date(yearNum, month, 0);
+      const soldByEndOfMonth = await prisma.inventory.count({
+        where: { status: 'SOLD', soldDate: { lte: lastDay } },
+      });
+      monthlyListings.push({
+        month,
+        year: yearNum,
+        listingsAtEndOfMonth: totalInventory - soldByEndOfMonth,
+      });
+    }
 
     res.json({
       success: true,
       data: {
         monthlySales,
         projectSales,
-        topAgents,
+        recentSales,
+        currentAvailable,
+        listingsAtEndOfPeriod,
+        monthlyListings,
       },
     });
   } catch (error) {
@@ -296,7 +304,8 @@ router.get('/payments', protect, async (req, res) => {
     const { startDate, endDate, paymentMethod } = req.query;
 
     const where = {
-      isArchived: false, // Exclude archived vouchers from payment reports
+      status: 'APPROVED',
+      isArchived: false,
     };
     
     if (startDate && endDate) {
@@ -356,9 +365,14 @@ router.get('/payments', protect, async (req, res) => {
         amount: data.amount,
       }));
 
+    const totalPayments = vouchers.reduce((sum, v) => sum + (v.amount || 0), 0);
+    const totalCount = vouchers.length;
+
     res.json({
       success: true,
       data: {
+        totalPayments,
+        totalCount,
         byMethod: payments,
         daily: dailyPayments,
       },

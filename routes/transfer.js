@@ -7,7 +7,7 @@ const router = express.Router();
 /**
  * @route   POST /api/transfer
  * @desc    Create a new transfer request
- * @access  Private (Agent/Admin)
+ * @access  Private (Manager/Admin)
  * @workflow:
  * 1. Validate plot is SOLD
  * 2. Create transfer record
