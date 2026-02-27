@@ -93,7 +93,6 @@ model User {
   // Relations
   customers          Customer[]
   inventory          Inventory[]     @relation("CreatedInventory")
-  assignedPlots      Inventory[]     @relation("AgentInventory")
   biyanaForms        Biyana[]        @relation("CreatedBiyana")
   approvedBiyanas    Biyana[]        @relation("ApprovedBiyana")
   saleAgreements     SaleAgreement[] @relation("CreatedAgreements")
@@ -145,12 +144,10 @@ model Inventory {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   buyerId      String?
-  agentId      String?
   createdById  String
 
   // Relations
   buyer          Customer?       @relation(fields: [buyerId], references: [id])
-  agent          User?           @relation("AgentInventory", fields: [agentId], references: [id])
   createdBy      User            @relation("CreatedInventory", fields: [createdById], references: [id])
   biyanaForms    Biyana[]
   saleAgreements SaleAgreement[]
